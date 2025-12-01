@@ -118,6 +118,36 @@ func rotatePDF(input string, opts map[string]string) string {
 }
 
 // ----------------------------
+// REORDER PDF (change page order)
+// ----------------------------
+// opts["order"] should be "3,1,2" for example
+func reorderPDF(input string, opts map[string]string) string {
+	order := opts["order"]
+	if order == "" {
+		log.Println("❌ reorderPDF: no page order provided")
+		return ""
+	}
+
+	out := TempName("reordered", ".pdf")
+
+	// qpdf command: qpdf --pages input 3 1 2 -- output.pdf
+	args := []string{"--pages", input}
+	args = append(args, strings.Split(order, ",")...)
+	args = append(args, "--", out)
+
+	cmd := exec.Command("qpdf", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Println("❌ qpdf reorder failed:", err)
+		log.Println("Output:", string(output))
+		return ""
+	}
+
+	return out
+}
+
+
+// ----------------------------
 // MAIN PROCESSOR
 // ----------------------------
 func ProcessJob(job Job) {
@@ -160,6 +190,12 @@ func ProcessJob(job Job) {
 		if out != "" {
 			outputs = []string{out}
 		}
+
+	case "reorder":
+    out := reorderPDF(local[0], job.Options)
+    if out != "" {
+        outputs = []string{out}
+    }
 
 	default:
 		log.Println("❌ Unknown tool:", job.Tool)
