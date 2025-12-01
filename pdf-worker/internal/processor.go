@@ -65,18 +65,56 @@ func compressPDF(input string) string {
 // ROTATE PDF
 // ----------------------------
 func rotatePDF(input string, opts map[string]string) string {
-	angle := opts["angle"] // 90/180/270
-
-	out := TempName("rotated", ".pdf")
-
-	// qpdf rotation
-	err := exec.Command("qpdf", "--rotate="+angle, input, out).Run()
-	if err != nil {
-		log.Println("❌ qpdf missing or failed:", err)
-		return ""
+	// ----------------------------
+	// 1. Validate rotation angle
+	// ----------------------------
+	angle := opts["angle"]
+	if angle == "" {
+			angle = "90"
 	}
 
-	return out
+	// ----------------------------
+	// 2. Convert to absolute paths (CRITICAL on Linux workers)
+	// ----------------------------
+	absIn, err := filepath.Abs(input)
+	if err != nil {
+			log.Println("❌ Failed to get absolute input path:", err)
+			return ""
+	}
+
+	out := TempName("rotated", ".pdf")
+	absOut, err := filepath.Abs(out)
+	if err != nil {
+			log.Println("❌ Failed to get absolute output path:", err)
+			return ""
+	}
+
+	// ----------------------------
+	// 3. Validate the PDF before rotating
+	// ----------------------------
+	check := exec.Command("qpdf", "--check", absIn)
+	if err := check.Run(); err != nil {
+			log.Println("❌ Invalid PDF input for rotation:", absIn, "Error:", err)
+			return ""
+	}
+
+	// ----------------------------
+	// 4. Perform rotation
+	// ----------------------------
+	cmd := exec.Command("qpdf", "--rotate="+angle, absIn, absOut)
+	outBytes, err := cmd.CombinedOutput()
+	if err != nil {
+			log.Println("❌ qpdf rotation failed")
+			log.Println("Command:", cmd.String())
+			log.Println("Output:", string(outBytes))
+			return ""
+	}
+
+	// ----------------------------
+	// 5. Success
+	// ----------------------------
+	log.Println("✅ PDF rotated:", absOut)
+	return absOut
 }
 
 // ----------------------------
