@@ -95,21 +95,34 @@ func RunPythonWorker(job Job) (string, error) {
     stdin.Write(jsonBytes)
     stdin.Close()
 
-    log.Println("🐍 Python Output:", string(out)) 
-
     out, err := cmd.CombinedOutput()
+
+    // ALWAYS show output from python
+    log.Println("🐍 Python Output:", string(out))
+
     if err != nil {
-        log.Println("❌ Python worker failed:", err)
-        log.Println("🔍 Python Output:", string(out))
-        UpdateStatus(job.ID, "error: " + string(out))
-        return "", err
+        errMsg := "Python worker failed: " + err.Error() + " | Output: " + string(out)
+        log.Println("❌", errMsg)
+
+        // Save full error inside Redis so frontend sees it
+        UpdateStatus(job.ID, "error: "+errMsg)
+
+        return "", errors.New(errMsg)
     }
 
     var response map[string]string
     json.Unmarshal(out, &response)
 
-    return response["url"], nil // Python already uploaded file
+    if response["status"] == "error" {
+        errMsg := "Python internal error: " + response["error"]
+        log.Println("❌", errMsg)
+        UpdateStatus(job.ID, "error: "+errMsg)
+        return "", errors.New(errMsg)
+    }
+
+    return response["url"], nil
 }
+
 
 //
 // MAIN JOB PROCESSOR
