@@ -156,6 +156,8 @@ func ProcessJob(job Job) {
         }
 
         SaveResult(job.ID, finalURL)
+
+        // local cleanup (LibreOffice only)
         DeleteFile(input)
         DeleteFile(output)
 
@@ -170,20 +172,18 @@ func ProcessJob(job Job) {
 
         url, err := RunPythonWorker(job)
         if err != nil || url == "" {
-            UpdateStatus(job.ID, "error: "+err.Error()) 
+            UpdateStatus(job.ID, "error: "+err.Error())
             log.Println("❌ Python conversion failed:", err)
             return
         }
 
+        // DO NOT Delete input/output (Python handles everything)
         SaveResult(job.ID, url)
 
         log.Println("✅ Python Job Completed:", job.ID)
         return
     }
 
-    //
-    // Invalid tool
-    //
     log.Println("❌ Unknown tool:", job.Tool)
     UpdateStatus(job.ID, "error")
 }
