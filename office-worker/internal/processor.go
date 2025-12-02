@@ -1,6 +1,7 @@
 package internal
 
 import (
+    "encoding/json"
     "errors"
     "log"
     "os"
@@ -9,13 +10,16 @@ import (
     "time"
 )
 
-// Auto-detect newest output file
+//
+// ---------------------------------------------------
+// FILE HELPERS
+// ---------------------------------------------------
 func findNewestFile(ext string) (string, error) {
     pattern := filepath.Join("/tmp", "*"+ext)
     files, _ := filepath.Glob(pattern)
 
     if len(files) == 0 {
-        return "", errors.New("no output files found for pattern " + pattern)
+        return "", errors.New("no output files found for " + pattern)
     }
 
     newest := files[0]
@@ -28,7 +32,6 @@ func findNewestFile(ext string) (string, error) {
             newestTime = mt
         }
     }
-
     return newest, nil
 }
 
@@ -40,11 +43,12 @@ func getMTime(path string) time.Time {
     return fi.ModTime()
 }
 
-// ----------------------------
-// RUN LIBREOFFICE
-// ----------------------------
+//
+// ---------------------------------------------------
+// LIBREOFFICE EXECUTION
+// ---------------------------------------------------
 func runLibreOffice(input, convertTo string) (string, error) {
-    log.Println("🚀 Running LibreOffice:", convertTo, "→", input)
+    log.Println("🚀 LibreOffice converting:", input, "→", convertTo)
 
     cmd := exec.Command("soffice",
         "--headless",
@@ -62,57 +66,28 @@ func runLibreOffice(input, convertTo string) (string, error) {
         return "", err
     }
 
-    // Wait for output file to appear
     time.Sleep(800 * time.Millisecond)
 
-    // Detect extension from convertTo
+    // determine extension
     ext := "." + convertTo
-    if convertTo == "pdf" {
-        ext = ".pdf"
-    }
-    if convertTo == "docx" {
-        ext = ".docx"
-    }
-    if convertTo == "xlsx" {
-        ext = ".xlsx"
-    }
-    if convertTo == "pptx" {
-        ext = ".pptx"
-    }
 
-    // Auto-detect newest output file
     out, err := findNewestFile(ext)
     if err != nil {
-        log.Println("❌ Output not detected:", err)
+        log.Println("❌ Output not found:", err)
         return "", err
     }
 
-    log.Println("✅ Detected output file:", out)
+    log.Println("✅ LibreOffice output:", out)
     return out, nil
 }
 
-// ----------------------------
-// TOOL WRAPPERS
-// ----------------------------
-func officeToPDF(input string) (string, error) {
-    return runLibreOffice(input, "pdf")
-}
-
-func pdfToWord(input string) (string, error) {
-    return runLibreOffice(input, "docx")
-}
-
-func pdfToExcel(input string) (string, error) {
-    return runLibreOffice(input, "xlsx")
-}
-
-func pdfToPPT(input string) (string, error) {
-    return runLibreOffice(input, "pptx")
-}
-
+//
+// ---------------------------------------------------
+// PYTHON WORKER CALL
+// ---------------------------------------------------
 func RunPythonWorker(job Job) (string, error) {
 
-    log.Println("🐍 Python Worker triggered for:", job.Tool)
+    log.Println("🐍 Running Python worker for:", job.Tool)
 
     jsonBytes, _ := json.Marshal(map[string]interface{}{
         "job_id": job.ID,
@@ -128,58 +103,84 @@ func RunPythonWorker(job Job) (string, error) {
 
     out, err := cmd.CombinedOutput()
     if err != nil {
-        log.Println("❌ Python worker failed:", err, string(out))
+        log.Println("❌ Python worker failed:", err, "Output:", string(out))
         return "", err
     }
 
     var response map[string]string
     json.Unmarshal(out, &response)
 
+    // Python returns final S3 URL
     return response["url"], nil
 }
 
-
-// ----------------------------
+//
+// ---------------------------------------------------
 // MAIN JOB PROCESSOR
-// ----------------------------
+// ---------------------------------------------------
 func ProcessJob(job Job) {
 
-    log.Println("⚙ Processing Office job:", job.Tool)
+    log.Println("⚙ Processing job:", job.Tool)
     UpdateStatus(job.ID, "processing")
 
-    input := DownloadFromS3(job.Files[0])
-    if input == "" {
-        UpdateStatus(job.ID, "error")
-        return
-    }
-
+    var input string
     var output string
     var err error
 
-    switch job.Tool {
-    case "word-to-pdf", "excel-to-pdf", "ppt-to-pdf":
-        output, err = officeToPDF(input)
+    // -------------------------
+    // 1) LibreOffice jobs
+    // -------------------------
+    if job.Tool == "word-to-pdf" || job.Tool == "excel-to-pdf" || job.Tool == "ppt-to-pdf" {
 
-    case "pdf-to-word", "pdf-to-excel", "pdf-to-ppt":
+        input = DownloadFromS3(job.Files[0])
+        if input == "" {
+            UpdateStatus(job.ID, "error")
+            return
+        }
+
+        output, err = runLibreOffice(input, "pdf")
+        if err != nil {
+            UpdateStatus(job.ID, "error")
+            return
+        }
+
+        finalURL := UploadToS3(output)
+        if finalURL == "" {
+            UpdateStatus(job.ID, "error")
+            return
+        }
+
+        SaveResult(job.ID, finalURL)
+
+        DeleteFile(input)
+        DeleteFile(output)
+
+        log.Println("✅ LibreOffice Job Completed:", job.ID)
+        return
+    }
+
+    // -------------------------
+    // 2) Python worker jobs
+    // -------------------------
+    if job.Tool == "pdf-to-word" || job.Tool == "pdf-to-excel" || job.Tool == "pdf-to-ppt" {
+
+        // Python worker handles S3 download + upload
         output, err = RunPythonWorker(job)
-    
+        if err != nil || output == "" {
+            UpdateStatus(job.ID, "error")
+            return
+        }
 
-    if err != nil || output == "" {
-        UpdateStatus(job.ID, "error")
+        // Output IS ALREADY an S3 URL
+        SaveResult(job.ID, output)
+
+        log.Println("✅ Python Job Completed:", job.ID)
         return
     }
 
-    // Upload
-    finalURL := UploadToS3(output)
-    if finalURL == "" {
-        UpdateStatus(job.ID, "error")
-        return
-    }
-
-    SaveResult(job.ID, finalURL)
-
-    DeleteFile(input)
-    DeleteFile(output)
-
-    log.Println("✅ Office Job Completed:", job.ID)
+    // -------------------------
+    // INVALID TOOL
+    // -------------------------
+    log.Println("❌ Unknown tool:", job.Tool)
+    UpdateStatus(job.ID, "error")
 }
