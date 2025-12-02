@@ -131,11 +131,21 @@ func reorderPDF(input string, opts map[string]string) string {
 	// Step 1 → Repair PDF
 	repaired := TempName("fixed", ".pdf")
 	repairCmd := exec.Command("qpdf", "--linearize", input, repaired)
-	if out, err := repairCmd.CombinedOutput(); err != nil {
-		log.Println("❌ qpdf repair failed:", err)
-		log.Println("Output:", string(out))
-		return ""
-	}
+	out, err := repairCmd.CombinedOutput()
+
+// Allow exit code 3 (success with warnings)
+if err != nil {
+    exitError, ok := err.(*exec.ExitError)
+
+    if ok && exitError.ExitCode() == 3 {
+        log.Println("⚠️ qpdf repair succeeded with warnings, continuing...")
+    } else {
+        log.Println("❌ qpdf repair failed:", err)
+        log.Println("Output:", string(out))
+        return ""
+    }
+}
+
 
 	out := TempName("reordered", ".pdf")
 	pageOrder := strings.Split(order, ",")
