@@ -99,6 +99,7 @@ func RunPythonWorker(job Job) (string, error) {
     if err != nil {
         log.Println("❌ Python worker failed:", err)
         log.Println("🔍 Python Output:", string(out))
+        UpdateStatus(job.ID, "error: " + string(out))
         return "", err
     }
 

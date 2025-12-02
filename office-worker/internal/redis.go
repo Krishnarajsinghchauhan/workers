@@ -30,6 +30,7 @@ func UpdateStatus(jobID, status string) {
 	err := client.Set(ctx, "job:"+jobID, status, 0).Err()
 	if err != nil {
 		log.Println("❌ Redis UpdateStatus error:", err)
+		
 	}
 }
 
