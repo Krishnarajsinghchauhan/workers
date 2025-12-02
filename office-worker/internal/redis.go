@@ -26,16 +26,18 @@ func InitRedis() {
 	}
 }
 
+// Save job status exactly how backend expects
 func UpdateStatus(jobID, status string) {
-	key := "job:" + jobID
-	err := client.Set(ctx, key, status, 0).Err()
+	err := client.Set(ctx, "job:"+jobID, status, 0).Err()
 	if err != nil {
 		log.Println("❌ Redis UpdateStatus error:", err)
 	}
 }
 
+// Save result exactly how backend expects
 func SaveResult(jobID, url string) {
-	// Save result URL
+
+	// Save final result URL
 	client.Set(ctx, "result:"+jobID, url, 0)
 
 	// Mark job completed
