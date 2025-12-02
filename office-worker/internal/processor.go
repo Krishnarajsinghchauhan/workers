@@ -110,6 +110,35 @@ func pdfToPPT(input string) (string, error) {
     return runLibreOffice(input, "pptx")
 }
 
+func RunPythonWorker(job Job) (string, error) {
+
+    log.Println("🐍 Python Worker triggered for:", job.Tool)
+
+    jsonBytes, _ := json.Marshal(map[string]interface{}{
+        "job_id": job.ID,
+        "tool":   job.Tool,
+        "files":  job.Files,
+    })
+
+    cmd := exec.Command("python3", "/home/ubuntu/office-python-worker/worker.py")
+    stdin, _ := cmd.StdinPipe()
+
+    stdin.Write(jsonBytes)
+    stdin.Close()
+
+    out, err := cmd.CombinedOutput()
+    if err != nil {
+        log.Println("❌ Python worker failed:", err, string(out))
+        return "", err
+    }
+
+    var response map[string]string
+    json.Unmarshal(out, &response)
+
+    return response["url"], nil
+}
+
+
 // ----------------------------
 // MAIN JOB PROCESSOR
 // ----------------------------
@@ -131,15 +160,9 @@ func ProcessJob(job Job) {
     case "word-to-pdf", "excel-to-pdf", "ppt-to-pdf":
         output, err = officeToPDF(input)
 
-    case "pdf-to-word":
-        output, err = pdfToWord(input)
-
-    case "pdf-to-excel":
-        output, err = pdfToExcel(input)
-
-    case "pdf-to-ppt":
-        output, err = pdfToPPT(input)
-    }
+    case "pdf-to-word", "pdf-to-excel", "pdf-to-ppt":
+        output, err = RunPythonWorker(job)
+    
 
     if err != nil || output == "" {
         UpdateStatus(job.ID, "error")
