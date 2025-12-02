@@ -130,21 +130,34 @@ func reorderPDF(input string, opts map[string]string) string {
 
 	out := TempName("reordered", ".pdf")
 
-	// qpdf command: qpdf --pages input 3 1 2 -- output.pdf
-	args := []string{"--pages", input}
-	args = append(args, strings.Split(order, ",")...)
-	args = append(args, "--", out)
+	// Split "3,1,2" into ["3", "1", "2"]
+	pageOrder := strings.Split(order, ",")
+
+	// Correct qpdf syntax:
+	// qpdf input.pdf output.pdf --pages input.pdf 3 1 2 --
+	args := []string{
+		input,      // input file
+		out,        // output file
+		"--pages",
+		input,      // qpdf requires input again after --pages
+	}
+	args = append(args, pageOrder...) // 3 1 2
+	args = append(args, "--")         // end marker
+
+	log.Println("➡ qpdf reorder args:", args)
 
 	cmd := exec.Command("qpdf", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Println("❌ qpdf reorder failed:", err)
-		log.Println("Output:", string(output))
+		log.Println("Output:\n", string(output))
 		return ""
 	}
 
+	log.Println("✅ PDF reordered:", out)
 	return out
 }
+
 
 
 // ----------------------------
