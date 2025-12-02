@@ -27,14 +27,17 @@ func InitRedis() {
 }
 
 func UpdateStatus(jobID, status string) {
-	err := client.Set(ctx, jobID, status, 0).Err()
+	key := "job:" + jobID
+	err := client.Set(ctx, key, status, 0).Err()
 	if err != nil {
-			log.Println("❌ Redis UpdateStatus error:", err)
+		log.Println("❌ Redis UpdateStatus error:", err)
 	}
 }
 
 func SaveResult(jobID, url string) {
-	client.Set(ctx, jobID, "completed", 0)
-	client.Set(ctx, jobID+"_result", url, 0)
-}
+	// Save result URL
+	client.Set(ctx, "result:"+jobID, url, 0)
 
+	// Mark job completed
+	client.Set(ctx, "job:"+jobID, "completed", 0)
+}
