@@ -1,101 +1,113 @@
 package internal
 
 import (
+    "errors"
     "log"
     "os"
     "os/exec"
     "path/filepath"
-    "strings"
+    "time"
 )
 
-// Build correct LibreOffice output path
-func outputPath(input, newExt string) string {
-    base := strings.TrimSuffix(filepath.Base(input), filepath.Ext(input))
-    return filepath.Join("/tmp", base+newExt)
+// Auto-detect newest output file
+func findNewestFile(ext string) (string, error) {
+    pattern := filepath.Join("/tmp", "*"+ext)
+    files, _ := filepath.Glob(pattern)
+
+    if len(files) == 0 {
+        return "", errors.New("no output files found for pattern " + pattern)
+    }
+
+    newest := files[0]
+    newestTime := getMTime(newest)
+
+    for _, f := range files[1:] {
+        mt := getMTime(f)
+        if mt.After(newestTime) {
+            newest = f
+            newestTime = mt
+        }
+    }
+
+    return newest, nil
+}
+
+func getMTime(path string) time.Time {
+    fi, err := os.Stat(path)
+    if err != nil {
+        return time.Time{}
+    }
+    return fi.ModTime()
 }
 
 // ----------------------------
-// Convert Office → PDF
+// RUN LIBREOFFICE
 // ----------------------------
-func officeToPDF(input string) string {
-    output := outputPath(input, ".pdf")
+func runLibreOffice(input, convertTo string) (string, error) {
+    log.Println("🚀 Running LibreOffice:", convertTo, "→", input)
 
     cmd := exec.Command("soffice",
         "--headless",
-        "--convert-to", "pdf",
+        "--invisible",
+        "--nodefault",
+        "--nofirststartwizard",
+        "--nologo",
+        "--convert-to", convertTo,
         input,
         "--outdir", "/tmp",
     )
 
     if err := cmd.Run(); err != nil {
-        log.Println("❌ Office-to-PDF failed:", err)
-        return ""
+        log.Println("❌ LibreOffice failed:", err)
+        return "", err
     }
 
-    return output
+    // Wait for output file to appear
+    time.Sleep(800 * time.Millisecond)
+
+    // Detect extension from convertTo
+    ext := "." + convertTo
+    if convertTo == "pdf" {
+        ext = ".pdf"
+    }
+    if convertTo == "docx" {
+        ext = ".docx"
+    }
+    if convertTo == "xlsx" {
+        ext = ".xlsx"
+    }
+    if convertTo == "pptx" {
+        ext = ".pptx"
+    }
+
+    // Auto-detect newest output file
+    out, err := findNewestFile(ext)
+    if err != nil {
+        log.Println("❌ Output not detected:", err)
+        return "", err
+    }
+
+    log.Println("✅ Detected output file:", out)
+    return out, nil
 }
 
 // ----------------------------
-// PDF → Word
+// TOOL WRAPPERS
 // ----------------------------
-func pdfToWord(input string) string {
-    output := outputPath(input, ".docx")
-
-    cmd := exec.Command("soffice",
-        "--headless",
-        "--convert-to", "docx",
-        input,
-        "--outdir", "/tmp",
-    )
-
-    if err := cmd.Run(); err != nil {
-        log.Println("❌ PDF-to-Word failed:", err)
-        return ""
-    }
-
-    return output
+func officeToPDF(input string) (string, error) {
+    return runLibreOffice(input, "pdf")
 }
 
-// ----------------------------
-// PDF → Excel
-// ----------------------------
-func pdfToExcel(input string) string {
-    output := outputPath(input, ".xlsx")
-
-    cmd := exec.Command("soffice",
-        "--headless",
-        "--convert-to", "xlsx",
-        input,
-        "--outdir", "/tmp",
-    )
-
-    if err := cmd.Run(); err != nil {
-        log.Println("❌ PDF-to-Excel failed:", err)
-        return ""
-    }
-
-    return output
+func pdfToWord(input string) (string, error) {
+    return runLibreOffice(input, "docx")
 }
 
-// ----------------------------
-// PDF → PowerPoint
-// ----------------------------
-func pdfToPPT(input string) string {
-    output := outputPath(input, ".pptx")
+func pdfToExcel(input string) (string, error) {
+    return runLibreOffice(input, "xlsx")
+}
 
-    cmd := exec.Command("soffice",
-        "--headless",
-        "--convert-to", "pptx",
-        input,
-        "--outdir", "/tmp",
-    )
-
-    if err := cmd.Run(); err != nil {
-        log.Println("❌ PDF-to-PPT failed:", err)
-        return ""
-    }
-
-    return output
+func pdfToPPT(input string) (string, error) {
+    return runLibreOffice(input, "pptx")
 }
 
 // ----------------------------
@@ -104,10 +116,8 @@ func pdfToPPT(input string) string {
 func ProcessJob(job Job) {
 
     log.Println("⚙ Processing Office job:", job.Tool)
-
     UpdateStatus(job.ID, "processing")
 
-    // 1. Download input file
     input := DownloadFromS3(job.Files[0])
     if input == "" {
         UpdateStatus(job.ID, "error")
@@ -115,34 +125,28 @@ func ProcessJob(job Job) {
     }
 
     var output string
+    var err error
 
     switch job.Tool {
     case "word-to-pdf", "excel-to-pdf", "ppt-to-pdf":
-        output = officeToPDF(input)
+        output, err = officeToPDF(input)
 
     case "pdf-to-word":
-        output = pdfToWord(input)
+        output, err = pdfToWord(input)
 
     case "pdf-to-excel":
-        output = pdfToExcel(input)
+        output, err = pdfToExcel(input)
 
     case "pdf-to-ppt":
-        output = pdfToPPT(input)
+        output, err = pdfToPPT(input)
     }
 
-    if output == "" {
+    if err != nil || output == "" {
         UpdateStatus(job.ID, "error")
         return
     }
 
-    // MUST check that file exists
-    if _, err := os.Stat(output); err != nil {
-        log.Println("❌ Converted file NOT FOUND:", output)
-        UpdateStatus(job.ID, "error")
-        return
-    }
-
-    // 3. Upload to S3
+    // Upload
     finalURL := UploadToS3(output)
     if finalURL == "" {
         UpdateStatus(job.ID, "error")
@@ -151,9 +155,8 @@ func ProcessJob(job Job) {
 
     SaveResult(job.ID, finalURL)
 
-    // Cleanup
     DeleteFile(input)
     DeleteFile(output)
 
-    log.Println("✅ Job completed:", job.ID)
+    log.Println("✅ Office Job Completed:", job.ID)
 }
