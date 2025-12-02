@@ -128,21 +128,27 @@ func reorderPDF(input string, opts map[string]string) string {
 		return ""
 	}
 
-	out := TempName("reordered", ".pdf")
+	// Step 1 → Repair PDF
+	repaired := TempName("fixed", ".pdf")
+	repairCmd := exec.Command("qpdf", "--linearize", input, repaired)
+	if out, err := repairCmd.CombinedOutput(); err != nil {
+		log.Println("❌ qpdf repair failed:", err)
+		log.Println("Output:", string(out))
+		return ""
+	}
 
-	// Split "3,1,2" into ["3", "1", "2"]
+	out := TempName("reordered", ".pdf")
 	pageOrder := strings.Split(order, ",")
 
-	// Correct qpdf syntax:
-	// qpdf input.pdf output.pdf --pages input.pdf 3 1 2 --
+	// Step 2 → Correct qpdf reorder syntax
 	args := []string{
-		input,      // input file
-		out,        // output file
+		repaired, // input after repair
+		out,      // output
 		"--pages",
-		input,      // qpdf requires input again after --pages
+		repaired, // must match input
 	}
-	args = append(args, pageOrder...) // 3 1 2
-	args = append(args, "--")         // end marker
+	args = append(args, pageOrder...)
+	args = append(args, "--")
 
 	log.Println("➡ qpdf reorder args:", args)
 
@@ -157,6 +163,7 @@ func reorderPDF(input string, opts map[string]string) string {
 	log.Println("✅ PDF reordered:", out)
 	return out
 }
+
 
 
 
