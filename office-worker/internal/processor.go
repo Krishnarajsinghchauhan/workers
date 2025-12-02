@@ -95,18 +95,14 @@ func RunPythonWorker(job Job) (string, error) {
     stdin.Write(jsonBytes)
     stdin.Close()
 
+    // Run Python and capture full output
     out, err := cmd.CombinedOutput()
 
-    // ALWAYS show output from python
-    log.Println("🐍 Python Output:", string(out))
+    log.Println("🐍 Python Output:\n" + string(out))
 
     if err != nil {
         errMsg := "Python worker failed: " + err.Error() + " | Output: " + string(out)
         log.Println("❌", errMsg)
-
-        // Save full error inside Redis so frontend sees it
-        UpdateStatus(job.ID, "error: "+errMsg)
-
         return "", errors.New(errMsg)
     }
 
@@ -116,12 +112,12 @@ func RunPythonWorker(job Job) (string, error) {
     if response["status"] == "error" {
         errMsg := "Python internal error: " + response["error"]
         log.Println("❌", errMsg)
-        UpdateStatus(job.ID, "error: "+errMsg)
         return "", errors.New(errMsg)
     }
 
     return response["url"], nil
 }
+
 
 
 //
