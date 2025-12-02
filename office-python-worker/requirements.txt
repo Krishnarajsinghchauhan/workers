@@ -1,0 +1,6 @@
+boto3
+pdf2docx
+camelot-py[cv]
+python-pptx
+pdf2image
+Pillow
