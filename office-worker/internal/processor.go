@@ -16,14 +16,11 @@ import (
 func findNewestFile(ext string) (string, error) {
     pattern := filepath.Join("/tmp", "*"+ext)
     files, _ := filepath.Glob(pattern)
-
     if len(files) == 0 {
-        return "", errors.New("no output files found for " + pattern)
+        return "", errors.New("no output files found: " + pattern)
     }
-
     newest := files[0]
     newestTime := getMTime(newest)
-
     for _, f := range files[1:] {
         mt := getMTime(f)
         if mt.After(newestTime) {
@@ -77,7 +74,7 @@ func runLibreOffice(input, convertTo string) (string, error) {
 }
 
 //
-// PYTHON WORKER CALL
+// PYTHON WORKER
 //
 func RunPythonWorker(job Job) (string, error) {
 
@@ -91,37 +88,28 @@ func RunPythonWorker(job Job) (string, error) {
 
     cmd := exec.Command("python3", "/home/ubuntu/code/workers/office-python-worker/worker.py")
     stdin, _ := cmd.StdinPipe()
-
     stdin.Write(jsonBytes)
     stdin.Close()
 
-    // Run Python and capture full output
     out, err := cmd.CombinedOutput()
-
     log.Println("🐍 Python Output:\n" + string(out))
-
-    if err != nil {
-        errMsg := "Python worker failed: " + err.Error() + " | Output: " + string(out)
-        log.Println("❌", errMsg)
-        return "", errors.New(errMsg)
-    }
 
     var response map[string]string
     json.Unmarshal(out, &response)
 
+    if err != nil {
+        return "", errors.New("Python worker error: " + string(out))
+    }
     if response["status"] == "error" {
-        errMsg := "Python internal error: " + response["error"]
-        log.Println("❌", errMsg)
-        return "", errors.New(errMsg)
+        return "", errors.New("Python returned error: " + response["error"])
     }
 
     return response["url"], nil
 }
 
 
-
 //
-// MAIN JOB PROCESSOR
+// PROCESS JOB
 //
 func ProcessJob(job Job) {
 
@@ -129,7 +117,7 @@ func ProcessJob(job Job) {
     UpdateStatus(job.ID, "processing")
 
     //
-    // LibreOffice jobs
+    // LIBREOFFICE JOBS
     //
     if job.Tool == "word-to-pdf" || job.Tool == "excel-to-pdf" || job.Tool == "ppt-to-pdf" {
 
@@ -153,7 +141,6 @@ func ProcessJob(job Job) {
 
         SaveResult(job.ID, finalURL)
 
-        // local cleanup (LibreOffice only)
         DeleteFile(input)
         DeleteFile(output)
 
@@ -162,18 +149,17 @@ func ProcessJob(job Job) {
     }
 
     //
-    // Python worker jobs (PDF → Word/Excel/PPT)
+    // PYTHON JOBS
     //
     if job.Tool == "pdf-to-word" || job.Tool == "pdf-to-excel" || job.Tool == "pdf-to-ppt" {
 
         url, err := RunPythonWorker(job)
-        if err != nil || url == "" {
-            UpdateStatus(job.ID, "error: "+err.Error())
-            log.Println("❌ Python conversion failed:", err)
+        if err != nil {
+            log.Println("❌ Python worker failed:", err)
+            UpdateStatus(job.ID, "error")
             return
         }
 
-        // DO NOT Delete input/output (Python handles everything)
         SaveResult(job.ID, url)
 
         log.Println("✅ Python Job Completed:", job.ID)
