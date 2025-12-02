@@ -127,13 +127,24 @@ func reorderPDF(input string, opts map[string]string) string {
 			return ""
 	}
 
-	// CLEAN AND PREPARE ORDER
+	// Clean spaces
 	order = strings.ReplaceAll(order, " ", "")
+
+	// Split page numbers: "3,1,2" → ["3","1","2"]
 	pageOrder := strings.Split(order, ",")
 
-	// Step 1: Repair PDF (Safe for qpdf 11.x)
+	// Convert to ABSOLUTE PATHS (important)
+	absIn, err := filepath.Abs(input)
+	if err != nil {
+			log.Println("❌ Failed to get abs input path:", err)
+			return ""
+	}
+
+	// Step 1 — Repair PDF
 	repaired := TempName("fixed", ".pdf")
-	repairCmd := exec.Command("qpdf", "--linearize", input, repaired)
+	absRepaired, _ := filepath.Abs(repaired)
+
+	repairCmd := exec.Command("qpdf", "--linearize", absIn, absRepaired)
 	repairOutput, repairErr := repairCmd.CombinedOutput()
 
 	if repairErr != nil {
@@ -146,24 +157,31 @@ func reorderPDF(input string, opts map[string]string) string {
 			}
 	}
 
-	// Step 2: Use BRACES {} around page numbers (CRITICAL FIX)
-	pageArg := "{" + strings.Join(pageOrder, ",") + "}"
-
+	// Step 2 — Build reorder command (correct qpdf syntax)
 	outFile := TempName("reordered", ".pdf")
+	absOut, _ := filepath.Abs(outFile)
 
+	// Final qpdf args:
+	// qpdf repaired.pdf output.pdf --pages repaired.pdf 3 1 2 --
 	args := []string{
-			repaired,        // input
-			outFile,         // output
+			absRepaired,  // input
+			absOut,       // output
 			"--pages",
-			repaired,        // input again
-			pageArg,         // "{1,3,2}"
-			"--",
+			absRepaired,  // input again
 	}
+
+	// Add page numbers individually (CRITICAL)
+	// Example: ["3","1","2"]
+	args = append(args, pageOrder...)
+
+	// End token
+	args = append(args, "--")
 
 	log.Println("➡ qpdf reorder args:", args)
 
-	cmd := exec.Command("qpdf", args...)
-	output, err := cmd.CombinedOutput()
+	// Execute the command
+	reorderCmd := exec.Command("qpdf", args...)
+	output, err := reorderCmd.CombinedOutput()
 
 	if err != nil {
 			if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 3 {
@@ -175,8 +193,8 @@ func reorderPDF(input string, opts map[string]string) string {
 			}
 	}
 
-	log.Println("✅ PDF reordered:", outFile)
-	return outFile
+	log.Println("✅ PDF reordered:", absOut)
+	return absOut
 }
 
 
