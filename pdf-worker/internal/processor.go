@@ -146,33 +146,39 @@ func reorderPDF(input string, opts map[string]string) string {
 	}
 
 	// Step 2 — Reorder PDF
-	outFile := TempName("reordered", ".pdf")
-	pageOrder := strings.Split(order, ",")
+	// Step 2 — Reorder PDF
+outFile := TempName("reordered", ".pdf")
+pageOrder := strings.Split(order, ",")
 
-	args := []string{
-			repaired,
-			outFile,
-			"--pages",
-			repaired,
-	}
+// qpdf syntax:
+// qpdf input.pdf output.pdf --pages input.pdf 1 3 2 --
+args := []string{
+    repaired,         // input
+    outFile,          // output
+    "--pages",
+    repaired,         // input again after --pages
+}
 
-	args = append(args, pageOrder...)
-	args = append(args, "--")
+// append page numbers
+args = append(args, pageOrder...)
 
-	log.Println("➡ qpdf reorder args:", args)
+// add final separator
+args = append(args, "--")
 
-	reorderCmd := exec.Command("qpdf", args...)
-	reorderOutput, reorderErr := reorderCmd.CombinedOutput()
+log.Println("➡ qpdf reorder args:", args)
 
-	if reorderErr != nil {
-			if exitErr, ok := reorderErr.(*exec.ExitError); ok && exitErr.ExitCode() == 3 {
-					log.Println("⚠️ reorder succeeded with warnings — continuing")
-			} else {
-					log.Println("❌ qpdf reorder failed:", reorderErr)
-					log.Println("Output:", string(reorderOutput))
-					return ""
-			}
-	}
+reorderCmd := exec.Command("qpdf", args...)
+reorderOutput, reorderErr := reorderCmd.CombinedOutput()
+
+if reorderErr != nil {
+    if exitErr, ok := reorderErr.(*exec.ExitError); ok && exitErr.ExitCode() == 3 {
+        log.Println("⚠️ reorder succeeded with warnings — continuing")
+    } else {
+        log.Println("❌ qpdf reorder failed:", reorderErr)
+        log.Println("Output:", string(reorderOutput))
+        return ""
+    }
+}
 
 	log.Println("✅ PDF reordered:", outFile)
 	return outFile
