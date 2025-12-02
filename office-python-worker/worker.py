@@ -52,29 +52,37 @@ def upload_file(path, job_id):
 
 
 def main():
-    job = json.loads(sys.stdin.read())
+    try:
+        job = json.loads(sys.stdin.read())
 
-    tool = job["tool"]
-    job_id = job["job_id"]
-    file_url = job["files"][0]
+        tool = job["tool"]
+        job_id = job["job_id"]
+        file_url = job["files"][0]
 
-    input_path = download_s3_file(file_url)
+        input_path = download_s3_file(file_url)
 
-    if tool == "pdf-to-word":
-        out = tempfile.mktemp(suffix=".docx")
-        pdf_to_word(input_path, out)
+        if tool == "pdf-to-word":
+            out = tempfile.mktemp(suffix=".docx")
+            pdf_to_word(input_path, out)
 
-    elif tool == "pdf-to-excel":
-        out = tempfile.mktemp(suffix=".xlsx")
-        pdf_to_excel(input_path, out)
+        elif tool == "pdf-to-excel":
+            out = tempfile.mktemp(suffix=".xlsx")
+            pdf_to_excel(input_path, out)
 
-    elif tool == "pdf-to-ppt":
-        out = tempfile.mktemp(suffix=".pptx")
-        pdf_to_ppt(input_path, out)
+        elif tool == "pdf-to-ppt":
+            out = tempfile.mktemp(suffix=".pptx")
+            pdf_to_ppt(input_path, out)
 
-    url = upload_file(out, job_id)
+        url = upload_file(out, job_id)
 
-    print(json.dumps({"status": "completed", "url": url}))
+        print(json.dumps({"status": "completed", "url": url}))
+
+    except Exception as e:
+        print(json.dumps({
+            "status": "error",
+            "error": str(e)
+        }))
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -97,7 +97,8 @@ func RunPythonWorker(job Job) (string, error) {
 
     out, err := cmd.CombinedOutput()
     if err != nil {
-        log.Println("❌ Python worker failed:", err, "Output:", string(out))
+        llog.Println("❌ Python worker failed:", err)
+        log.Println("🔍 Python Output:", string(out))
         return "", err
     }
 
