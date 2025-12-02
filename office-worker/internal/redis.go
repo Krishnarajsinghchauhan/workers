@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"os"
 
@@ -26,7 +27,6 @@ func InitRedis() {
 	}
 }
 
-// Save job status exactly how backend expects
 func UpdateStatus(jobID, status string) {
 	err := client.Set(ctx, "job:"+jobID, status, 0).Err()
 	if err != nil {
@@ -34,12 +34,13 @@ func UpdateStatus(jobID, status string) {
 	}
 }
 
-// Save result exactly how backend expects
 func SaveResult(jobID, url string) {
+	// Must be JSON array (backend requirement)
+	urls := []string{url}
+	b, _ := json.Marshal(urls)
 
-	// Save final result URL
-	client.Set(ctx, "result:"+jobID, url, 0)
-
-	// Mark job completed
+	client.Set(ctx, "result:"+jobID, string(b), 0)
 	client.Set(ctx, "job:"+jobID, "completed", 0)
+
+	log.Println("💾 Saved result for job:", jobID)
 }
