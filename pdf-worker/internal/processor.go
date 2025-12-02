@@ -124,8 +124,8 @@ func rotatePDF(input string, opts map[string]string) string {
 func reorderPDF(input string, opts map[string]string) string {
 	order := opts["order"]
 	if order == "" {
-		log.Println("❌ reorderPDF: no page order provided")
-		return ""
+			log.Println("❌ reorderPDF: no page order provided")
+			return ""
 	}
 
 	// Step 1 → Repair PDF
@@ -133,29 +133,25 @@ func reorderPDF(input string, opts map[string]string) string {
 	repairCmd := exec.Command("qpdf", "--linearize", input, repaired)
 	out, err := repairCmd.CombinedOutput()
 
-// Allow exit code 3 (success with warnings)
-if err != nil {
-    exitError, ok := err.(*exec.ExitError)
+	if err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 3 {
+					log.Println("⚠️ qpdf repair succeeded with warnings — continuing")
+			} else {
+					log.Println("❌ qpdf repair failed:", err)
+					log.Println("Output:", string(out))
+					return ""
+			}
+	}
 
-    if ok && exitError.ExitCode() == 3 {
-        log.Println("⚠️ qpdf repair succeeded with warnings, continuing...")
-    } else {
-        log.Println("❌ qpdf repair failed:", err)
-        log.Println("Output:", string(out))
-        return ""
-    }
-}
-
-
-	out := TempName("reordered", ".pdf")
+	// Step 2 → Reorder PDF
+	outFile := TempName("reordered", ".pdf")
 	pageOrder := strings.Split(order, ",")
 
-	// Step 2 → Correct qpdf reorder syntax
 	args := []string{
-		repaired, // input after repair
-		out,      // output
-		"--pages",
-		repaired, // must match input
+			repaired,
+			outFile,
+			"--pages",
+			repaired,
 	}
 	args = append(args, pageOrder...)
 	args = append(args, "--")
@@ -165,14 +161,19 @@ if err != nil {
 	cmd := exec.Command("qpdf", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Println("❌ qpdf reorder failed:", err)
-		log.Println("Output:\n", string(output))
-		return ""
+			if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 3 {
+					log.Println("⚠️ reorder succeeded with warnings — continuing")
+			} else {
+					log.Println("❌ qpdf reorder failed:", err)
+					log.Println("Output:", string(output))
+					return ""
+			}
 	}
 
-	log.Println("✅ PDF reordered:", out)
-	return out
+	log.Println("✅ PDF reordered:", outFile)
+	return outFile
 }
+
 
 
 
