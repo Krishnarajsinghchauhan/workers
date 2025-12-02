@@ -95,6 +95,8 @@ func RunPythonWorker(job Job) (string, error) {
     stdin.Write(jsonBytes)
     stdin.Close()
 
+    log.Println("🐍 Python Output:", string(out)) 
+
     out, err := cmd.CombinedOutput()
     if err != nil {
         log.Println("❌ Python worker failed:", err)
@@ -155,7 +157,8 @@ func ProcessJob(job Job) {
 
         url, err := RunPythonWorker(job)
         if err != nil || url == "" {
-            UpdateStatus(job.ID, "error")
+            UpdateStatus(job.ID, "error: "+err.Error()) 
+            log.Println("❌ Python conversion failed:", err)
             return
         }
 
