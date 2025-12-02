@@ -35,12 +35,18 @@ func UpdateStatus(jobID, status string) {
 }
 
 func SaveResult(jobID, url string) {
-	// Must be JSON array (backend requirement)
-	urls := []string{url}
-	b, _ := json.Marshal(urls)
+	log.Println("💾 Saving result for job:", jobID, "URL:", url)
 
-	client.Set(ctx, "result:"+jobID, string(b), 0)
-	client.Set(ctx, "job:"+jobID, "completed", 0)
+	// Directly store URL (not JSON array!)
+	err := client.Set(ctx, "result:"+jobID, url, 0).Err()
+	if err != nil {
+			log.Println("❌ Redis SaveResult error:", err)
+	}
 
-	log.Println("💾 Saved result for job:", jobID)
+	// Mark job completed
+	err = client.Set(ctx, "job:"+jobID, "completed", 0).Err()
+	if err != nil {
+			log.Println("❌ Redis status update error:", err)
+	}
 }
+
