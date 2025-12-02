@@ -75,7 +75,6 @@ func runLibreOffice(input, convertTo string) (string, error) {
 
 //
 // PYTHON WORKER
-//
 func RunPythonWorker(job Job) (string, error) {
 
     log.Println("🐍 Running Python worker for:", job.Tool)
@@ -87,20 +86,36 @@ func RunPythonWorker(job Job) (string, error) {
     })
 
     cmd := exec.Command("python3", "/home/ubuntu/code/workers/office-python-worker/worker.py")
-
     stdin, _ := cmd.StdinPipe()
     stdin.Write(jsonBytes)
     stdin.Close()
 
-    out, _ := cmd.CombinedOutput() // <-- DO NOT check err here!
-    log.Println("🐍 Python Output:\n" + string(out))
+    outBytes, _ := cmd.CombinedOutput()
 
-    var response map[string]string
-    if err := json.Unmarshal(out, &response); err != nil {
-        return "", errors.New("Invalid JSON from Python: " + string(out))
+    output := string(outBytes)
+    log.Println("🐍 Python Output:\n" + output)
+
+    // -------------------------------------
+    // Extract ONLY the JSON part (last line)
+    // -------------------------------------
+    lines := strings.Split(strings.TrimSpace(output), "\n")
+    last := lines[len(lines)-1]
+
+    // Must start with '{'
+    if !strings.HasPrefix(last, "{") {
+        log.Println("❌ No JSON found in Python output")
+        return "", errors.New("Python output missing JSON")
     }
 
-    if status, ok := response["status"]; ok && status == "completed" {
+    // Parse JSON
+    var response map[string]string
+    if err := json.Unmarshal([]byte(last), &response); err != nil {
+        log.Println("❌ JSON Unmarshal failed:", err)
+        return "", errors.New("Python JSON error: " + last)
+    }
+
+    // Success
+    if response["status"] == "completed" {
         return response["url"], nil
     }
 
@@ -108,8 +123,9 @@ func RunPythonWorker(job Job) (string, error) {
         return "", errors.New(response["error"])
     }
 
-    return "", errors.New("Unknown python output")
+    return "", errors.New("Unknown Python result")
 }
+
 
 
 
