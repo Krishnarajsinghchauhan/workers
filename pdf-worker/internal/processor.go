@@ -128,22 +128,24 @@ func reorderPDF(input string, opts map[string]string) string {
 			return ""
 	}
 
-	// Step 1 → Repair PDF
+	// Step 1 — Repair PDF
 	repaired := TempName("fixed", ".pdf")
 	repairCmd := exec.Command("qpdf", "--linearize", input, repaired)
-	out, err := repairCmd.CombinedOutput()
 
-	if err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 3 {
+	repairOutput, repairErr := repairCmd.CombinedOutput()
+
+	if repairErr != nil {
+			if exitErr, ok := repairErr.(*exec.ExitError); ok && exitErr.ExitCode() == 3 {
+					// Exit code 3 = success with warnings → allowed
 					log.Println("⚠️ qpdf repair succeeded with warnings — continuing")
 			} else {
-					log.Println("❌ qpdf repair failed:", err)
-					log.Println("Output:", string(out))
+					log.Println("❌ qpdf repair failed:", repairErr)
+					log.Println("Output:", string(repairOutput))
 					return ""
 			}
 	}
 
-	// Step 2 → Reorder PDF
+	// Step 2 — Reorder PDF
 	outFile := TempName("reordered", ".pdf")
 	pageOrder := strings.Split(order, ",")
 
@@ -153,19 +155,21 @@ func reorderPDF(input string, opts map[string]string) string {
 			"--pages",
 			repaired,
 	}
+
 	args = append(args, pageOrder...)
 	args = append(args, "--")
 
 	log.Println("➡ qpdf reorder args:", args)
 
-	cmd := exec.Command("qpdf", args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 3 {
+	reorderCmd := exec.Command("qpdf", args...)
+	reorderOutput, reorderErr := reorderCmd.CombinedOutput()
+
+	if reorderErr != nil {
+			if exitErr, ok := reorderErr.(*exec.ExitError); ok && exitErr.ExitCode() == 3 {
 					log.Println("⚠️ reorder succeeded with warnings — continuing")
 			} else {
-					log.Println("❌ qpdf reorder failed:", err)
-					log.Println("Output:", string(output))
+					log.Println("❌ qpdf reorder failed:", reorderErr)
+					log.Println("Output:", string(reorderOutput))
 					return ""
 			}
 	}
@@ -173,6 +177,7 @@ func reorderPDF(input string, opts map[string]string) string {
 	log.Println("✅ PDF reordered:", outFile)
 	return outFile
 }
+
 
 
 
