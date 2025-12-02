@@ -40,27 +40,33 @@ func InitS3() {
 
 // Extract S3 key from s3://bucket/file or https://bucket.s3.amazonaws.com/file
 func ExtractS3Key(url string) string {
-
-	// Format 1 → s3://bucket/key
-	if strings.HasPrefix(url, "s3://") {
-		trim := strings.TrimPrefix(url, "s3://")
-		parts := strings.SplitN(trim, "/", 2)
-		if len(parts) < 2 {
-			log.Println("❌ Missing key in S3 URL:", url)
-			return ""
-		}
-		return parts[1]
+	// FORMAT A: https://bucket.s3.amazonaws.com/key
+	prefix1 := "https://" + bucket + ".s3.amazonaws.com/"
+	if strings.HasPrefix(url, prefix1) {
+			return url[len(prefix1):]
 	}
 
-	// Format 2 → https://bucket.s3.amazonaws.com/key
-	httpsPrefix := "https://" + bucket + ".s3.amazonaws.com/"
-	if strings.HasPrefix(url, httpsPrefix) {
-		return url[len(httpsPrefix):]
+	// FORMAT B: https://bucket.s3.<region>.amazonaws.com/key
+	if strings.Contains(url, ".s3.") {
+			parts := strings.Split(url, ".amazonaws.com/")
+			if len(parts) == 2 {
+					return parts[1]
+			}
+	}
+
+	// FORMAT C: s3://bucket/key
+	if strings.HasPrefix(url, "s3://") {
+			trimmed := strings.TrimPrefix(url, "s3://")
+			parts := strings.SplitN(trimmed, "/", 2)
+			if len(parts) == 2 {
+					return parts[1]
+			}
 	}
 
 	log.Println("❌ Invalid S3 URL:", url)
 	return ""
 }
+
 
 // DOWNLOAD
 func DownloadFromS3(url string) string {
