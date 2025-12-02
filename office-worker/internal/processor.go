@@ -95,7 +95,7 @@ func RunPythonWorker(job Job) (string, error) {
         "files":  job.Files,
     })
 
-    cmd := exec.Command("python3", "/home/ubuntu/office-python-worker/worker.py")
+    cmd := exec.Command("python3", "/home/ubuntu/code/workers/office-python-worker/worker.py")
     stdin, _ := cmd.StdinPipe()
 
     stdin.Write(jsonBytes)
