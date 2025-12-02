@@ -123,80 +123,57 @@ func rotatePDF(input string, opts map[string]string) string {
 func reorderPDF(input string, opts map[string]string) string {
 	order := opts["order"]
 	if order == "" {
-			log.Println("❌ reorderPDF: no page order provided")
-			return ""
+		log.Println("❌ reorderPDF: no page order provided")
+		return ""
 	}
 
-	// Convert to absolute paths (critical)
-	absIn, _ := filepath.Abs(input)
+	// REMOVE SPACES (CRITICAL)
+	order = strings.ReplaceAll(order, " ", "")
+	pageOrder := strings.Split(order, ",")
 
-	// Step 1 — Repair PDF
+	// Step 1 – Repair PDF
 	repaired := TempName("fixed", ".pdf")
-	absRepaired, _ := filepath.Abs(repaired)
-
-	repairCmd := exec.Command("qpdf", "--linearize", absIn, absRepaired)
+	repairCmd := exec.Command("qpdf", "--linearize", input, repaired)
 	repairOutput, repairErr := repairCmd.CombinedOutput()
 
 	if repairErr != nil {
-			if exitErr, ok := repairErr.(*exec.ExitError); ok && exitErr.ExitCode() == 3 {
-					log.Println("⚠️ qpdf repair succeeded with warnings — continuing")
-			} else {
-					log.Println("❌ qpdf repair failed:", repairErr)
-					log.Println("Output:", string(repairOutput))
-					return ""
-			}
-	}
-
-	// Step 2 — Sanitize page order
-	rawPages := strings.Split(order, ",")
-	var pageOrder []string
-
-	for _, p := range rawPages {
-			t := strings.TrimSpace(p)
-			if t != "" {
-					pageOrder = append(pageOrder, t)
-			}
-	}
-
-	if len(pageOrder) == 0 {
-			log.Println("❌ reorderPDF: invalid page list")
+		if exitErr, ok := repairErr.(*exec.ExitError); ok && exitErr.ExitCode() == 3 {
+			log.Println("⚠️ qpdf repair succeeded with warnings — continuing")
+		} else {
+			log.Println("❌ qpdf repair failed:", repairErr)
+			log.Println("Output:", string(repairOutput))
 			return ""
+		}
 	}
 
-	// Step 3 — Output
+	// Step 2 – Reorder pages
 	outFile := TempName("reordered", ".pdf")
-	absOut, _ := filepath.Abs(outFile)
 
-	// Correct qpdf syntax:
-	// qpdf input output --pages input 3 1 2 --
 	args := []string{
-			absRepaired,
-			absOut,
-			"--pages",
-			absRepaired,
+		repaired,     // input
+		outFile,      // output
+		"--pages",
+		repaired,     // input again
 	}
 
-	args = append(args, pageOrder...)
-	args = append(args, "--")
+	args = append(args, pageOrder...) // add page numbers
+	args = append(args, "--")         // MUST end with --
 
 	log.Println("➡ qpdf reorder args:", args)
 
-	reorderCmd := exec.Command("qpdf", args...)
-	reorderOutput, reorderErr := reorderCmd.CombinedOutput()
+	cmd := exec.Command("qpdf", args...)
+	out, err := cmd.CombinedOutput()
 
-	if reorderErr != nil {
-			if exitErr, ok := reorderErr.(*exec.ExitError); ok && exitErr.ExitCode() == 3 {
-					log.Println("⚠️ reorder succeeded with warnings — continuing")
-			} else {
-					log.Println("❌ qpdf reorder failed:", reorderErr)
-					log.Println("Output:", string(reorderOutput))
-					return ""
-			}
+	if err != nil {
+		log.Println("❌ qpdf reorder failed:", err)
+		log.Println("Output:", string(out))
+		return ""
 	}
 
-	log.Println("✅ PDF reordered:", absOut)
-	return absOut
+	log.Println("✅ PDF reordered:", outFile)
+	return outFile
 }
+
 
 
 
