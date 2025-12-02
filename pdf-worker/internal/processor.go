@@ -123,56 +123,62 @@ func rotatePDF(input string, opts map[string]string) string {
 func reorderPDF(input string, opts map[string]string) string {
 	order := opts["order"]
 	if order == "" {
-		log.Println("❌ reorderPDF: no page order provided")
-		return ""
+			log.Println("❌ reorderPDF: no page order provided")
+			return ""
 	}
 
-	// REMOVE SPACES (CRITICAL)
+	// CLEAN AND PREPARE ORDER
 	order = strings.ReplaceAll(order, " ", "")
 	pageOrder := strings.Split(order, ",")
 
-	// Step 1 – Repair PDF
+	// Step 1: Repair PDF (Safe for qpdf 11.x)
 	repaired := TempName("fixed", ".pdf")
 	repairCmd := exec.Command("qpdf", "--linearize", input, repaired)
 	repairOutput, repairErr := repairCmd.CombinedOutput()
 
 	if repairErr != nil {
-		if exitErr, ok := repairErr.(*exec.ExitError); ok && exitErr.ExitCode() == 3 {
-			log.Println("⚠️ qpdf repair succeeded with warnings — continuing")
-		} else {
-			log.Println("❌ qpdf repair failed:", repairErr)
-			log.Println("Output:", string(repairOutput))
-			return ""
-		}
+			if exitErr, ok := repairErr.(*exec.ExitError); ok && exitErr.ExitCode() == 3 {
+					log.Println("⚠️ qpdf repair warnings — continuing")
+			} else {
+					log.Println("❌ qpdf repair failed:", repairErr)
+					log.Println("Output:", string(repairOutput))
+					return ""
+			}
 	}
 
-	// Step 2 – Reorder pages
+	// Step 2: Use BRACES {} around page numbers (CRITICAL FIX)
+	pageArg := "{" + strings.Join(pageOrder, ",") + "}"
+
 	outFile := TempName("reordered", ".pdf")
 
 	args := []string{
-		repaired,     // input
-		outFile,      // output
-		"--pages",
-		repaired,     // input again
+			repaired,        // input
+			outFile,         // output
+			"--pages",
+			repaired,        // input again
+			pageArg,         // "{1,3,2}"
+			"--",
 	}
-
-	args = append(args, pageOrder...) // add page numbers
-	args = append(args, "--")         // MUST end with --
 
 	log.Println("➡ qpdf reorder args:", args)
 
 	cmd := exec.Command("qpdf", args...)
-	out, err := cmd.CombinedOutput()
+	output, err := cmd.CombinedOutput()
 
 	if err != nil {
-		log.Println("❌ qpdf reorder failed:", err)
-		log.Println("Output:", string(out))
-		return ""
+			if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 3 {
+					log.Println("⚠️ qpdf reorder warnings — continuing")
+			} else {
+					log.Println("❌ qpdf reorder failed:", err)
+					log.Println("Output:", string(output))
+					return ""
+			}
 	}
 
 	log.Println("✅ PDF reordered:", outFile)
 	return outFile
 }
+
 
 
 
