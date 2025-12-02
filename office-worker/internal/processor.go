@@ -11,9 +11,8 @@ import (
 )
 
 //
-// ---------------------------------------------------
 // FILE HELPERS
-// ---------------------------------------------------
+//
 func findNewestFile(ext string) (string, error) {
     pattern := filepath.Join("/tmp", "*"+ext)
     files, _ := filepath.Glob(pattern)
@@ -44,9 +43,8 @@ func getMTime(path string) time.Time {
 }
 
 //
-// ---------------------------------------------------
-// LIBREOFFICE EXECUTION
-// ---------------------------------------------------
+// LIBREOFFICE
+//
 func runLibreOffice(input, convertTo string) (string, error) {
     log.Println("🚀 LibreOffice converting:", input, "→", convertTo)
 
@@ -68,10 +66,7 @@ func runLibreOffice(input, convertTo string) (string, error) {
 
     time.Sleep(800 * time.Millisecond)
 
-    // determine extension
-    ext := "." + convertTo
-
-    out, err := findNewestFile(ext)
+    out, err := findNewestFile("." + convertTo)
     if err != nil {
         log.Println("❌ Output not found:", err)
         return "", err
@@ -82,9 +77,8 @@ func runLibreOffice(input, convertTo string) (string, error) {
 }
 
 //
-// ---------------------------------------------------
 // PYTHON WORKER CALL
-// ---------------------------------------------------
+//
 func RunPythonWorker(job Job) (string, error) {
 
     log.Println("🐍 Running Python worker for:", job.Tool)
@@ -110,35 +104,29 @@ func RunPythonWorker(job Job) (string, error) {
     var response map[string]string
     json.Unmarshal(out, &response)
 
-    // Python returns final S3 URL
-    return response["url"], nil
+    return response["url"], nil // Python already uploaded file
 }
 
 //
-// ---------------------------------------------------
 // MAIN JOB PROCESSOR
-// ---------------------------------------------------
+//
 func ProcessJob(job Job) {
 
     log.Println("⚙ Processing job:", job.Tool)
     UpdateStatus(job.ID, "processing")
 
-    var input string
-    var output string
-    var err error
-
-    // -------------------------
-    // 1) LibreOffice jobs
-    // -------------------------
+    //
+    // LibreOffice jobs
+    //
     if job.Tool == "word-to-pdf" || job.Tool == "excel-to-pdf" || job.Tool == "ppt-to-pdf" {
 
-        input = DownloadFromS3(job.Files[0])
+        input := DownloadFromS3(job.Files[0])
         if input == "" {
             UpdateStatus(job.ID, "error")
             return
         }
 
-        output, err = runLibreOffice(input, "pdf")
+        output, err := runLibreOffice(input, "pdf")
         if err != nil {
             UpdateStatus(job.ID, "error")
             return
@@ -151,7 +139,6 @@ func ProcessJob(job Job) {
         }
 
         SaveResult(job.ID, finalURL)
-
         DeleteFile(input)
         DeleteFile(output)
 
@@ -159,28 +146,26 @@ func ProcessJob(job Job) {
         return
     }
 
-    // -------------------------
-    // 2) Python worker jobs
-    // -------------------------
+    //
+    // Python worker jobs (PDF → Word/Excel/PPT)
+    //
     if job.Tool == "pdf-to-word" || job.Tool == "pdf-to-excel" || job.Tool == "pdf-to-ppt" {
 
-        // Python worker handles S3 download + upload
-        output, err = RunPythonWorker(job)
-        if err != nil || output == "" {
+        url, err := RunPythonWorker(job)
+        if err != nil || url == "" {
             UpdateStatus(job.ID, "error")
             return
         }
 
-        // Output IS ALREADY an S3 URL
-        SaveResult(job.ID, output)
+        SaveResult(job.ID, url)
 
         log.Println("✅ Python Job Completed:", job.ID)
         return
     }
 
-    // -------------------------
-    // INVALID TOOL
-    // -------------------------
+    //
+    // Invalid tool
+    //
     log.Println("❌ Unknown tool:", job.Tool)
     UpdateStatus(job.ID, "error")
 }
