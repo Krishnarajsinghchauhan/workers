@@ -45,41 +45,66 @@ func findMagick() string {
 // -----------------------------------
 // IMAGE ENHANCER
 // -----------------------------------
-func enhanceScan(input string) string {
-	outPattern := TempFile("enhanced", ".png")      // example: /tmp/enhanced_115801.png
-	outBase := strings.TrimSuffix(outPattern, ".png") // → /tmp/enhanced_115801
+func enhancePDF(pdfPath string) (string, error) {
 
-	log.Println("🔧 Enhancing scan:", input)
+	log.Println("📄 Step 1: PDF → PNG pages (300 DPI)")
 
-	// For PDFs, convert generates: outBase-0.png, outBase-1.png ...
-	cmd := exec.Command(
-		MAGICK,
-		input,
-		"-normalize",
-		"-brightness-contrast", "10x20",
-		outBase+"-%d.png",
-	)
-
-	raw, err := cmd.CombinedOutput()
+	base := "/tmp/enh_page"
+	cmd := exec.Command("pdftoppm", pdfPath, base, "-png", "-r", "300")
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Println("❌ enhanceScan failed:", err)
-		log.Println(string(raw))
-		return ""
+			log.Println("❌ pdftoppm failed:", string(out))
+			return "", err
 	}
 
-	// Detect generated file(s)
-	matches, _ := filepath.Glob(outBase + "-*.png")
-	if len(matches) == 0 {
-		log.Println("❌ enhanceScan: no PNGs generated")
-		return ""
+	pages, _ := filepath.Glob(base + "-*.png")
+	if len(pages) == 0 {
+			return "", errors.New("no PNG pages extracted")
 	}
 
-	// We take first page
-	final := matches[0]
-	log.Println("✔ Enhanced scan →", final)
+	sort.Strings(pages)
 
-	return final
+	log.Println("📄 Found pages:", pages)
+
+	enhancedPages := []string{}
+
+	for _, pg := range pages {
+			outPg := strings.TrimSuffix(pg, ".png") + "_enh.png"
+
+			log.Println("🔧 Enhancing:", pg)
+
+			cmd := exec.Command(
+					MAGICK,
+					pg,
+					"-normalize",
+					"-brightness-contrast", "10x20",
+					outPg,
+			)
+
+			if err := cmd.Run(); err != nil {
+					log.Println("❌ Enhance failed:", err)
+					return "", err
+			}
+
+			enhancedPages = append(enhancedPages, outPg)
+	}
+
+	// Output PDF
+	finalPDF := TempFile("enhanced_pdf", ".pdf")
+
+	log.Println("📄 Step 3: combining pages → PDF:", finalPDF)
+
+	args := append(enhancedPages, finalPDF)
+	cmd = exec.Command("convert", args...)
+	if err := cmd.Run(); err != nil {
+			log.Println("❌ convert to PDF failed:", err)
+			return "", err
+	}
+
+	log.Println("✅ Enhanced PDF created:", finalPDF)
+	return finalPDF, nil
 }
+
 
 
 // -----------------------------------
