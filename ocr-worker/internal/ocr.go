@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-const magickPath = "/opt/homebrew/bin/magick"
+const magickPath = "/usr/bin/magick"
 
 func findMagick() string {
 	if _, err := exec.LookPath("magick"); err == nil {
