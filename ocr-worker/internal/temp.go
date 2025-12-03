@@ -3,6 +3,7 @@ package internal
 import (
 	"path/filepath"
 	"time"
+	"os"
 )
 
 // EXACT FUNCTION NAME NEEDED BY OCR
