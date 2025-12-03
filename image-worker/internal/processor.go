@@ -11,90 +11,94 @@ import (
     "strings"
 )
 
+// --------------
+// OCR PROCESSING
+// --------------
 func runOCR(pdfPath string) (string, error) {
-	log.Println("📄 Step 1: Converting PDF → PNG pages...")
 
-	base := "/tmp/ocr_page"
+    log.Println("📄 Step 1: Converting PDF → PNG pages...")
 
-	// Convert PDF to PNG images (one per page)
-	cmd := exec.Command("pdftoppm", pdfPath, base, "-png")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-			log.Println("❌ pdftoppm failed:", err)
-			log.Println("Output:", string(out))
-			return "", err
-	}
+    base := "/tmp/ocr_page"
 
-	// Collect generated PNGs
-	pages, _ := filepath.Glob(base + "-*.png")
-	if len(pages) == 0 {
-			log.Println("❌ No pages produced by pdftoppm")
-			return "", errors.New("no PNG pages created")
-	}
+    // Convert PDF to PNG pages
+    cmd := exec.Command("pdftoppm", pdfPath, base, "-png", "-r", "300")
+    out, err := cmd.CombinedOutput()
+    if err != nil {
+        log.Println("❌ pdftoppm failed:", err)
+        log.Println("Output:", string(out))
+        return "", err
+    }
 
-	sort.Strings(pages)
+    pages, _ := filepath.Glob(base + "-*.png")
+    if len(pages) == 0 {
+        return "", errors.New("no PNG pages produced")
+    }
 
-	log.Println("📄 Pages generated:", pages)
+    sort.Strings(pages)
+    log.Println("📄 PNG pages:", pages)
 
-	var buf bytes.Buffer
+    var merged bytes.Buffer
 
-	// Run OCR on each PNG page
-	for _, pg := range pages {
-			log.Println("🔍 Running Tesseract on:", pg)
+    for _, pg := range pages {
+        log.Println("🔍 OCR on:", pg)
 
-			outTxtBase := strings.TrimSuffix(pg, ".png")
-			cmd := exec.Command("tesseract", pg, outTxtBase, "--dpi", "300")
+        outBase := strings.TrimSuffix(pg, ".png")
 
-			tOut, tErr := cmd.CombinedOutput()
-			if tErr != nil {
-					log.Println("❌ Tesseract failed:", string(tOut))
-					return "", tErr
-			}
+        cmd := exec.Command(
+            "tesseract",
+            pg,
+            outBase,
+            "--dpi", "300",
+        )
 
-			txtData, err := os.ReadFile(outTxtBase + ".txt")
-			if err == nil {
-					buf.Write(txtData)
-					buf.WriteString("\n\n")
-			}
-	}
+        tOut, tErr := cmd.CombinedOutput()
+        if tErr != nil {
+            log.Println("❌ Tesseract failed:", string(tOut))
+            return "", tErr
+        }
 
-	// Save final merged OCR file
-	final := TempFile("ocr_output", ".txt")
-	os.WriteFile(final, buf.Bytes(), 0644)
+        txt, err := os.ReadFile(outBase + ".txt")
+        if err == nil {
+            merged.Write(txt)
+            merged.WriteString("\n\n")
+        }
+    }
 
-	log.Println("✅ OCR Completed:", final)
-	return final, nil
+    // Final output file
+    final := TempFile("ocr_output", ".txt")
+    os.WriteFile(final, merged.Bytes(), 0644)
+
+    log.Println("✅ OCR completed:", final)
+    return final, nil
 }
 
-
+// --------------
+// MAIN PROCESSOR
+// --------------
 func ProcessJob(job Job) {
-
     log.Println("⚙ OCR Worker processing:", job.Tool)
+
     UpdateStatus(job.ID, "processing")
 
-    pdfFile := DownloadFromS3(job.Files[0])
-    if pdfFile == "" {
+    local := DownloadFromS3(job.Files[0])
+    if local == "" {
         UpdateStatus(job.ID, "error")
         return
     }
 
-    out, err := runOCR(pdfFile)
+    output, err := runOCR(local)
     if err != nil {
+        UpdateStatus(job.ID, "error")
         log.Println("❌ runOCR failed:", err)
-        UpdateStatus(job.ID, "error")
         return
     }
 
-    url := UploadToS3(out)
-    if url == "" {
-        UpdateStatus(job.ID, "error")
-        return
-    }
+    finalURL := UploadToS3(output)
+    SaveResult(job.ID, finalURL)
+    UpdateStatus(job.ID, "completed")
 
-    SaveResult(job.ID, url)
-
-    DeleteFile(pdfFile)
-    DeleteFile(out)
+    DeleteFile(local)
+    DeleteFile(output)
 
     log.Println("✅ OCR Job Completed:", job.ID)
 }
