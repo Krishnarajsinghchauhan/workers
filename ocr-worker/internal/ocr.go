@@ -63,34 +63,50 @@ func runOCR(pdfPath string) (string, error) {
 
 // MAIN JOB PROCESSOR
 func ProcessJob(job Job) {
+
 	log.Println("⚙ OCR Worker processing:", job.Tool)
 	UpdateStatus(job.ID, "processing")
 
-	pdfFile := DownloadFromS3(job.Files[0])
-	if pdfFile == "" {
-		UpdateStatus(job.ID, "error")
-		return
+	local := DownloadFromS3(job.Files[0])
+	if local == "" {
+			UpdateStatus(job.ID, "error")
+			return
 	}
 
-	out, err := runOCR(pdfFile)
-	if err != nil {
-		log.Println("❌ runOCR failed:", err)
-		UpdateStatus(job.ID, "error")
-		return
+	ext := strings.ToLower(filepath.Ext(local))
+
+	var out string
+	var err error
+
+	switch job.Tool {
+
+	case "ocr", "pdf-to-text":
+			// PDF → TEXT
+			out, err = runPDFOCR(local)
+
+	case "image-to-text", "jpg-to-text", "png-to-text":
+			// IMAGE → TEXT
+			out, err = runImageOCR(local)
+
+	default:
+			log.Println("❌ Unknown OCR tool:", job.Tool)
+			UpdateStatus(job.ID, "error")
+			return
 	}
 
+	if err != nil || out == "" {
+			log.Println("❌ OCR failed:", err)
+			UpdateStatus(job.ID, "error")
+			return
+	}
+
+	// Upload result
 	url := UploadToS3(out)
-	if url == "" {
-		UpdateStatus(job.ID, "error")
-		return
-	}
-
 	SaveResult(job.ID, url)
 
-	DeleteFile(pdfFile)
+	DeleteFile(local)
 	DeleteFile(out)
 
 	UpdateStatus(job.ID, "completed")
-
-	log.Println("✅ OCR Job Completed:", job.ID)
+	log.Println("✅ OCR job completed:", job.ID)
 }
