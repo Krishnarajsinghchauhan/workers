@@ -1,85 +1,95 @@
 package internal
 
 import (
-	"log"
-	"os/exec"
+    "bytes"
+    "errors"
+    "log"
+    "os"
+    "os/exec"
+    "path/filepath"
+    "sort"
+    "strings"
 )
 
-// ----------------------------
-// Convert Images → PDF
-// ----------------------------
-func imagesToPDF(input string) string {
-	output := TempFile("images_to_pdf", ".pdf")
+func runOCR(pdfPath string) (string, error) {
 
-	cmd := exec.Command("convert", input, output)
+    log.Println("📄 Converting PDF to images...")
 
-	if err := cmd.Run(); err != nil {
-		log.Println("❌ Image to PDF failed:", err)
-		return ""
-	}
+    outPrefix := "/tmp/ocr_page"
 
-	return output
+    // Convert PDF → PNG (multi-page)
+    cmd := exec.Command("pdftoppm", pdfPath, outPrefix, "-png")
+    if out, err := cmd.CombinedOutput(); err != nil {
+        log.Println("❌ pdftoppm failed:", err)
+        log.Println("Output:", string(out))
+        return "", err
+    }
+
+    // Find all PNG pages
+    pages, _ := filepath.Glob(outPrefix + "-*.png")
+    if len(pages) == 0 {
+        return "", errors.New("no PNG pages created from PDF")
+    }
+
+    sort.Strings(pages)
+
+    // OCR all pages
+    var buf bytes.Buffer
+
+    for _, img := range pages {
+        log.Println("🔍 OCR:", img)
+
+        base := strings.TrimSuffix(img, ".png")
+
+        cmd := exec.Command("tesseract", img, base, "--dpi", "300")
+        if out, err := cmd.CombinedOutput(); err != nil {
+            log.Println("❌ tesseract failed:", string(out))
+            return "", err
+        }
+
+        txtPath := base + ".txt"
+        data, _ := os.ReadFile(txtPath)
+
+        buf.Write(data)
+        buf.WriteString("\n\n")
+    }
+
+    // Save final merged text file
+    final := TempFile("ocr", ".txt")
+    os.WriteFile(final, buf.Bytes(), 0644)
+
+    log.Println("✅ OCR output ready:", final)
+    return final, nil
 }
 
-// ----------------------------
-// Convert PDF → Images
-// ----------------------------
-func pdfToImages(input string) string {
-	output := TempFile("pdf_to_image", ".png")
-
-	cmd := exec.Command("convert", input, output)
-
-	if err := cmd.Run(); err != nil {
-		log.Println("❌ PDF to image failed:", err)
-		return ""
-	}
-
-	return output
-}
-
-// ----------------------------
-// MAIN JOB PROCESSOR
-// ----------------------------
 func ProcessJob(job Job) {
-	log.Println("⚙ Processing Image job:", job.Tool)
 
-	UpdateStatus(job.ID, "processing")
+    log.Println("⚙ OCR Worker processing:", job.Tool)
+    UpdateStatus(job.ID, "processing")
 
-	// Download file from S3
-	local := DownloadFromS3(job.Files[0])
-	if local == "" {
-		UpdateStatus(job.ID, "error")
-		return
-	}
+    pdfFile := DownloadFromS3(job.Files[0])
+    if pdfFile == "" {
+        UpdateStatus(job.ID, "error")
+        return
+    }
 
-	var output string
+    out, err := runOCR(pdfFile)
+    if err != nil {
+        log.Println("❌ runOCR failed:", err)
+        UpdateStatus(job.ID, "error")
+        return
+    }
 
-	switch job.Tool {
+    url := UploadToS3(out)
+    if url == "" {
+        UpdateStatus(job.ID, "error")
+        return
+    }
 
-	case "jpg-to-pdf", "png-to-pdf":
-		output = imagesToPDF(local)
+    SaveResult(job.ID, url)
 
-	case "pdf-to-jpg", "pdf-to-png":
-		output = pdfToImages(local)
+    DeleteFile(pdfFile)
+    DeleteFile(out)
 
-	default:
-		log.Println("❌ Unknown image tool:", job.Tool)
-		UpdateStatus(job.ID, "error")
-		return
-	}
-
-	if output == "" {
-		UpdateStatus(job.ID, "error")
-		return
-	}
-
-	// Upload output to S3
-	finalURL := UploadToS3(output)
-	SaveResult(job.ID, finalURL)
-
-	// Cleanup
-	DeleteFile(local)
-	DeleteFile(output)
-
-	log.Println("✅ Image job completed:", job.ID)
+    log.Println("✅ OCR Job Completed:", job.ID)
 }
