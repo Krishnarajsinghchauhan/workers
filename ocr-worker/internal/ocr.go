@@ -94,49 +94,62 @@ func runImageOCR(imgPath string) (string, error) {
 //
 func ProcessJob(job Job) {
 
-    log.Println("⚙ OCR Worker processing:", job.Tool)
-    UpdateStatus(job.ID, "processing")
+	log.Println("⚙ OCR Worker processing:", job.Tool)
+	UpdateStatus(job.ID, "processing")
 
-    local := DownloadFromS3(job.Files[0])
-    if local == "" {
-        UpdateStatus(job.ID, "error")
-        return
-    }
+	local := DownloadFromS3(job.Files[0])
+	if local == "" {
+			UpdateStatus(job.ID, "error")
+			return
+	}
 
-    ext := strings.ToLower(filepath.Ext(local))
+	ext := strings.ToLower(filepath.Ext(local))
 
-    var out string
-    var err error
+	var out string
+	var err error
 
-    switch job.Tool {
+	switch job.Tool {
 
-    case "ocr", "pdf-to-text":
-        if ext != ".pdf" {
-            log.Println("❌ Expected PDF but got:", ext)
-        }
-        out, err = runPDFOCR(local)
+	case "ocr", "pdf-to-text":
+			out, err = runPDFOCR(local)
 
-    case "image-to-text", "jpg-to-text", "png-to-text":
-        out, err = runImageOCR(local)
+	case "image-to-text", "jpg-to-text", "png-to-text":
+			out, err = runImageOCR(local)
 
-    default:
-        log.Println("❌ Unknown OCR tool:", job.Tool)
-        UpdateStatus(job.ID, "error")
-        return
-    }
+	case "scanned-enhance":
+			// 1️⃣ Enhance the scan
+			enhanced := enhanceScan(local)
+			if enhanced == "" {
+					log.Println("❌ enhanceScan failed")
+					UpdateStatus(job.ID, "error")
+					return
+			}
 
-    if err != nil || out == "" {
-        log.Println("❌ OCR failed:", err)
-        UpdateStatus(job.ID, "error")
-        return
-    }
+			// 2️⃣ Run OCR on enhanced image
+			out, err = runImageOCR(enhanced)
 
-    url := UploadToS3(out)
-    SaveResult(job.ID, url)
+			// Cleanup intermediate file
+			DeleteFile(enhanced)
 
-    DeleteFile(local)
-    DeleteFile(out)
+	default:
+			log.Println("❌ Unknown OCR tool:", job.Tool)
+			UpdateStatus(job.ID, "error")
+			return
+	}
 
-    UpdateStatus(job.ID, "completed")
-    log.Println("✅ OCR job completed:", job.ID)
+	if err != nil || out == "" {
+			log.Println("❌ OCR failed:", err)
+			UpdateStatus(job.ID, "error")
+			return
+	}
+
+	url := UploadToS3(out)
+	SaveResult(job.ID, url)
+
+	DeleteFile(local)
+	DeleteFile(out)
+
+	UpdateStatus(job.ID, "completed")
+	log.Println("✅ OCR job completed:", job.ID)
 }
+
