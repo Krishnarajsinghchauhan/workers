@@ -13,6 +13,26 @@ import (
 
 const magickPath = "/usr/bin/magick"
 
+func detectImageMagick() string {
+	// Linux standard: convert
+	if path, err := exec.LookPath("convert"); err == nil {
+			log.Println("🪄 Using ImageMagick:", path)
+			return path
+	}
+
+	// macOS Homebrew
+	if _, err := os.Stat("/opt/homebrew/bin/magick"); err == nil {
+			log.Println("🪄 Using Homebrew magick")
+			return "/opt/homebrew/bin/magick"
+	}
+
+	log.Println("❌ No ImageMagick found!")
+	return ""
+}
+
+var MAGICK = detectImageMagick()
+
+
 func findMagick() string {
 	if _, err := exec.LookPath("magick"); err == nil {
 		return "magick"
