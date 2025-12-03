@@ -1,16 +1,19 @@
 package internal
 
 import (
-    "os"
-    "path/filepath"
-    "time"
+	"path/filepath"
+	"time"
 )
 
+// EXACT FUNCTION NAME NEEDED BY OCR
+func TempName(prefix, ext string) string {
+	return filepath.Join("/tmp", prefix+"_"+time.Now().Format("150405")+ext)
+}
+
 func TempFile(prefix, ext string) string {
-    return filepath.Join("/tmp", prefix+"_"+time.Now().Format("150405")+ext)
+	return TempName(prefix, ext)
 }
 
 func DeleteFile(path string) {
-    os.Remove(path)
+	_ = os.Remove(path)
 }
-  

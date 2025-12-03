@@ -1,109 +1,96 @@
 package internal
 
 import (
+	"bytes"
+	"errors"
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
 	"strings"
 )
 
-const magickPath = "/opt/homebrew/bin/magick"
+func runOCR(pdfPath string) (string, error) {
 
-func findMagick() string {
-	if _, err := exec.LookPath("magick"); err == nil {
-		return "magick"
-	}
-	return magickPath
-}
+	log.Println("📄 Step 1: Converting PDF → PNG pages...")
 
-var MAGICK = findMagick()
+	base := "/tmp/ocr_page"
 
-// CLEAN IMAGE
-func preprocess(input string) string {
-	out := TempName("clean", ".png")
-
-	log.Println("➡ Running preprocess using:", MAGICK)
-
-	cmd := exec.Command(
-		MAGICK,
-		input,
-		"-alpha", "remove",
-		"-strip",
-		out,
-	)
-
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		log.Println("⚠️ preprocess failed:", err)
-		return input
-	}
-
-	log.Println("✔ preprocess OK →", out)
-	return out
-}
-
-// IMAGE → TEXT
-func extractText(input string) string {
-	clean := preprocess(input)
-	out := TempName("ocr_text", "")
-
-	cmd := exec.Command(
-		"tesseract",
-		clean,
-		out,
-		"--psm", "3",
-	)
-
-	raw, err := cmd.CombinedOutput()
+	cmd := exec.Command("pdftoppm", pdfPath, base, "-png", "-r", "300")
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Println("❌ extractText failed:", err)
-		log.Println("🔍 Tesseract Output:", string(raw))
-		return ""
+		log.Println("❌ pdftoppm failed:", err)
+		log.Println("Output:", string(out))
+		return "", err
 	}
 
-	return out + ".txt"
+	pages, _ := filepath.Glob(base + "-*.png")
+	if len(pages) == 0 {
+		return "", errors.New("no PNG pages produced")
+	}
+
+	sort.Strings(pages)
+
+	var merged bytes.Buffer
+
+	for _, pg := range pages {
+		log.Println("🔍 OCR on:", pg)
+
+		outBase := strings.TrimSuffix(pg, ".png")
+
+		cmd := exec.Command("tesseract", pg, outBase, "--dpi", "300")
+		tOut, tErr := cmd.CombinedOutput()
+
+		if tErr != nil {
+			log.Println("❌ Tesseract failed:", string(tOut))
+			return "", tErr
+		}
+
+		txt, err := os.ReadFile(outBase + ".txt")
+		if err == nil {
+			merged.Write(txt)
+			merged.WriteString("\n\n")
+		}
+	}
+
+	final := TempName("ocr_output", ".txt")
+	os.WriteFile(final, merged.Bytes(), 0644)
+
+	log.Println("✅ OCR Completed:", final)
+	return final, nil
 }
 
-// IMAGE/PDF → SEARCHABLE PDF
-func runOCR(input string) string {
-	out := TempName("ocr_pdf", ".pdf")
+// MAIN JOB PROCESSOR
+func ProcessJob(job Job) {
+	log.Println("⚙ OCR Worker processing:", job.Tool)
+	UpdateStatus(job.ID, "processing")
 
-	cmd := exec.Command(
-		"tesseract",
-		input,
-		strings.TrimSuffix(out, ".pdf"),
-		"pdf",
-	)
+	pdfFile := DownloadFromS3(job.Files[0])
+	if pdfFile == "" {
+		UpdateStatus(job.ID, "error")
+		return
+	}
 
-	raw, err := cmd.CombinedOutput()
+	out, err := runOCR(pdfFile)
 	if err != nil {
 		log.Println("❌ runOCR failed:", err)
-		log.Println("🔍 Tesseract Output:", string(raw))
-		return ""
+		UpdateStatus(job.ID, "error")
+		return
 	}
 
-	return out
-}
-
-// ENHANCE SCAN
-func enhanceScan(input string) string {
-	out := TempName("enhanced", ".png")
-
-	cmd := exec.Command(
-		MAGICK,
-		input,
-		"-normalize",
-		"-brightness-contrast", "10x20",
-		out,
-	)
-
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		log.Println("❌ enhanceScan failed:", err)
-		return ""
+	url := UploadToS3(out)
+	if url == "" {
+		UpdateStatus(job.ID, "error")
+		return
 	}
 
-	return out
+	SaveResult(job.ID, url)
+
+	DeleteFile(pdfFile)
+	DeleteFile(out)
+
+	UpdateStatus(job.ID, "completed")
+
+	log.Println("✅ OCR Job Completed:", job.ID)
 }
