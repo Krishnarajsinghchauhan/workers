@@ -1,57 +1,95 @@
 package internal
 
 import (
-	"log"
+    "bytes"
+    "errors"
+    "log"
+    "os"
+    "os/exec"
+    "path/filepath"
+    "sort"
+    "strings"
 )
 
+func runOCR(pdfPath string) (string, error) {
+
+    log.Println("📄 Converting PDF to images...")
+
+    outPrefix := "/tmp/ocr_page"
+
+    // Convert PDF → PNG (multi-page)
+    cmd := exec.Command("pdftoppm", pdfPath, outPrefix, "-png")
+    if out, err := cmd.CombinedOutput(); err != nil {
+        log.Println("❌ pdftoppm failed:", err)
+        log.Println("Output:", string(out))
+        return "", err
+    }
+
+    // Find all PNG pages
+    pages, _ := filepath.Glob(outPrefix + "-*.png")
+    if len(pages) == 0 {
+        return "", errors.New("no PNG pages created from PDF")
+    }
+
+    sort.Strings(pages)
+
+    // OCR all pages
+    var buf bytes.Buffer
+
+    for _, img := range pages {
+        log.Println("🔍 OCR:", img)
+
+        base := strings.TrimSuffix(img, ".png")
+
+        cmd := exec.Command("tesseract", img, base, "--dpi", "300")
+        if out, err := cmd.CombinedOutput(); err != nil {
+            log.Println("❌ tesseract failed:", string(out))
+            return "", err
+        }
+
+        txtPath := base + ".txt"
+        data, _ := os.ReadFile(txtPath)
+
+        buf.Write(data)
+        buf.WriteString("\n\n")
+    }
+
+    // Save final merged text file
+    final := TempFile("ocr", ".txt")
+    os.WriteFile(final, buf.Bytes(), 0644)
+
+    log.Println("✅ OCR output ready:", final)
+    return final, nil
+}
+
 func ProcessJob(job Job) {
-	log.Println("⚙ OCR Worker processing:", job.Tool)
 
-	UpdateStatus(job.ID, "processing")
+    log.Println("⚙ OCR Worker processing:", job.Tool)
+    UpdateStatus(job.ID, "processing")
 
-	// 1. Download
-	local := DownloadFromS3(job.Files[0])
-	if local == "" {
-		UpdateStatus(job.ID, "error")
-		return
-	}
+    pdfFile := DownloadFromS3(job.Files[0])
+    if pdfFile == "" {
+        UpdateStatus(job.ID, "error")
+        return
+    }
 
-	// ⭐ CRITICAL FIX: remove Unicode/emoji spaces
-	local = SafeFilename(local)
+    out, err := runOCR(pdfFile)
+    if err != nil {
+        log.Println("❌ runOCR failed:", err)
+        UpdateStatus(job.ID, "error")
+        return
+    }
 
-	var result string
+    url := UploadToS3(out)
+    if url == "" {
+        UpdateStatus(job.ID, "error")
+        return
+    }
 
-	// 2. Choose tool
-	switch job.Tool {
-	case "image-to-text":
-		result = extractText(local)
+    SaveResult(job.ID, url)
 
-	case "ocr":
-		result = runOCR(local)
+    DeleteFile(pdfFile)
+    DeleteFile(out)
 
-	case "scanned-enhance":
-		result = enhanceScan(local)
-
-	default:
-		log.Println("❌ Unknown tool:", job.Tool)
-		UpdateStatus(job.ID, "error")
-		return
-	}
-
-	if result == "" {
-		UpdateStatus(job.ID, "error")
-		return
-	}
-
-	// 3. Upload
-	url := UploadToS3(result)
-
-	// 4. Cleanup
-	DeleteFile(local)
-	DeleteFile(result)
-
-	// 5. Save
-	SaveResult(job.ID, url)
-
-	log.Println("✅ OCR job completed:", job.ID)
+    log.Println("✅ OCR Job Completed:", job.ID)
 }
