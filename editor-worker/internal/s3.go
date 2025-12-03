@@ -116,7 +116,7 @@ func UploadToS3(localPath string) string {
 		Bucket: &bucket,
 		Key:    &key,
 		Body:   file,
-		ACL:    "public-read", // REQUIRED for public download
+		
 	})
 
 	if err != nil {
