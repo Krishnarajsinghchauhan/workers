@@ -1,112 +1,85 @@
 package internal
 
 import (
-    "bytes"
-    "errors"
-    "log"
-    "os"
-    "os/exec"
-    "path/filepath"
-    "sort"
-    "strings"
+	"log"
+	"os/exec"
 )
 
-// --------------
-// OCR PROCESSING
-// --------------
-func runOCR(pdfPath string) (string, error) {
+// ----------------------------
+// Convert Images → PDF
+// ----------------------------
+func imagesToPDF(input string) string {
+	output := TempFile("images_to_pdf", ".pdf")
 
-    log.Println("📄 Step 1: Converting PDF → PNG pages using pdftoppm...")
+	cmd := exec.Command("convert", input, output)
 
-    base := "/tmp/ocr_page"
+	if err := cmd.Run(); err != nil {
+		log.Println("❌ Image to PDF failed:", err)
+		return ""
+	}
 
-    // Convert PDF to PNG pages
-    cmd := exec.Command("pdftoppm", pdfPath, base, "-png", "-r", "300")
-    out, err := cmd.CombinedOutput()
-    if err != nil {
-        log.Println("❌ pdftoppm failed:", err)
-        log.Println("Output:", string(out))
-        return "", errors.New("pdftoppm failed")
-    }
-
-    // Get the page list
-    pages, _ := filepath.Glob(base + "-*.png")
-    if len(pages) == 0 {
-        log.Println("❌ No PNG pages generated!")
-        return "", errors.New("no PNG pages produced")
-    }
-
-    sort.Strings(pages)
-    log.Println("📄 PNG pages generated:", pages)
-
-    var merged bytes.Buffer
-
-    // OCR page-by-page
-    for _, pg := range pages {
-        log.Println("🔍 Running OCR on:", pg)
-
-        outBase := strings.TrimSuffix(pg, ".png")
-
-        cmd := exec.Command(
-            "tesseract",
-            pg,
-            outBase,
-            "--dpi", "300",
-        )
-
-        tOut, tErr := cmd.CombinedOutput()
-        if tErr != nil {
-            log.Println("❌ Tesseract failed:", string(tOut))
-            return "", errors.New("tesseract failed on page " + pg)
-        }
-
-        txtFile := outBase + ".txt"
-        text, err := os.ReadFile(txtFile)
-        if err != nil {
-            log.Println("⚠️ Could not read:", txtFile)
-            continue
-        }
-
-        merged.Write(text)
-        merged.WriteString("\n\n")
-    }
-
-    // Save final merged txt
-    final := TempFile("ocr_output", ".txt")
-    os.WriteFile(final, merged.Bytes(), 0644)
-
-    log.Println("✅ OCR completed. Output file:", final)
-    return final, nil
+	return output
 }
 
-// --------------
-// MAIN PROCESSOR
-// --------------
+// ----------------------------
+// Convert PDF → Images
+// ----------------------------
+func pdfToImages(input string) string {
+	output := TempFile("pdf_to_image", ".png")
+
+	cmd := exec.Command("convert", input, output)
+
+	if err := cmd.Run(); err != nil {
+		log.Println("❌ PDF to image failed:", err)
+		return ""
+	}
+
+	return output
+}
+
+// ----------------------------
+// MAIN JOB PROCESSOR
+// ----------------------------
 func ProcessJob(job Job) {
-    log.Println("⚙ OCR Worker processing:", job.Tool)
+	log.Println("⚙ Processing Image job:", job.Tool)
 
-    UpdateStatus(job.ID, "processing")
+	UpdateStatus(job.ID, "processing")
 
-    local := DownloadFromS3(job.Files[0])
-    if local == "" {
-        UpdateStatus(job.ID, "error")
-        return
-    }
+	// Download file from S3
+	local := DownloadFromS3(job.Files[0])
+	if local == "" {
+		UpdateStatus(job.ID, "error")
+		return
+	}
 
-    output, err := runOCR(local)
-    if err != nil {
-        log.Println("❌ runOCR failed:", err)
-        UpdateStatus(job.ID, "error")
-        return
-    }
+	var output string
 
-    url := UploadToS3(output)
-    SaveResult(job.ID, url)
+	switch job.Tool {
 
-    UpdateStatus(job.ID, "completed")
+	case "jpg-to-pdf", "png-to-pdf":
+		output = imagesToPDF(local)
 
-    DeleteFile(local)
-    DeleteFile(output)
+	case "pdf-to-jpg", "pdf-to-png":
+		output = pdfToImages(local)
 
-    log.Println("✅ OCR Job Completed:", job.ID)
+	default:
+		log.Println("❌ Unknown image tool:", job.Tool)
+		UpdateStatus(job.ID, "error")
+		return
+	}
+
+	if output == "" {
+		UpdateStatus(job.ID, "error")
+		return
+	}
+
+	// Upload output to S3
+	finalURL := UploadToS3(output)
+	SaveResult(job.ID, finalURL)
+
+	// Cleanup
+	DeleteFile(local)
+	DeleteFile(output)
+
+	log.Println("✅ Image job completed:", job.ID)
 }

@@ -1,45 +1,107 @@
 package internal
 
 import (
-    "context"
-    "encoding/json"
-    "log"
-    "os"
+	"context"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
 
-    "github.com/aws/aws-sdk-go-v2/config"
-    "github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-var sqsClient *sqs.Client
+var s3Client *s3.Client
+var bucket string
 
-func InitSQS() {
-    cfg, _ := config.LoadDefaultConfig(context.TODO())
-    sqsClient = sqs.NewFromConfig(cfg)
-    log.Println("✅ SQS initialized")
+func InitS3() {
+	bucket = os.Getenv("AWS_S3_BUCKET")
+	if bucket == "" {
+		log.Println("❌ AWS_S3_BUCKET is EMPTY")
+	}
+
+	cfg, err := config.LoadDefaultConfig(
+		context.TODO(),
+		config.WithRegion("us-east-1"),
+	)
+	if err != nil {
+		log.Println("❌ S3 config error:", err)
+		return
+	}
+
+	s3Client = s3.NewFromConfig(cfg)
+	log.Println("✅ S3 initialized (Region: us-east-1)")
 }
 
-func ListenToQueue() {
-    queueURL := os.Getenv("OCR_QUEUE_URL")
+// Extract key
+func ExtractS3Key(url string) string {
 
-    log.Println("📥 Listening to:", queueURL)
+	// Format 1: s3://bucket/key
+	if strings.HasPrefix(url, "s3://") {
+		trim := strings.TrimPrefix(url, "s3://")
+		parts := strings.SplitN(trim, "/", 2)
+		if len(parts) < 2 {
+			return ""
+		}
+		return parts[1]
+	}
 
-    for {
-        msgs, _ := sqsClient.ReceiveMessage(context.TODO(), &sqs.ReceiveMessageInput{
-            QueueUrl:            &queueURL,
-            MaxNumberOfMessages: 1,
-            WaitTimeSeconds:     20,
-        })
+	// Format 2: https://bucket.s3.amazonaws.com/key
+	prefix := "https://" + bucket + ".s3.amazonaws.com/"
+	if strings.HasPrefix(url, prefix) {
+		return strings.TrimPrefix(url, prefix)
+	}
 
-        for _, m := range msgs.Messages {
-            var job Job
-            json.Unmarshal([]byte(*m.Body), &job)
+	log.Println("❌ Invalid S3 URL:", url)
+	return ""
+}
 
-            ProcessJob(job)
+// Download file
+func DownloadFromS3(url string) string {
+	key := ExtractS3Key(url)
+	if key == "" {
+		log.Println("❌ Cannot extract key from:", url)
+		return ""
+	}
 
-            sqsClient.DeleteMessage(context.TODO(), &sqs.DeleteMessageInput{
-                QueueUrl:      &queueURL,
-                ReceiptHandle: m.ReceiptHandle,
-            })
-        }
-    }
+	local := filepath.Join("/tmp", filepath.Base(key))
+
+	out, err := s3Client.GetObject(context.TODO(), &s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	})
+	if err != nil {
+		log.Println("❌ S3 download failed:", err)
+		return ""
+	}
+
+	file, _ := os.Create(local)
+	io.Copy(file, out.Body)
+	file.Close()
+
+	log.Println("⬇ Downloaded:", key, "→", local)
+	return local
+}
+
+// Upload file
+func UploadToS3(local string) string {
+	key := "processed/" + filepath.Base(local)
+
+	file, _ := os.Open(local)
+	defer file.Close()
+
+	_, err := s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+		Body:   file,
+	})
+	if err != nil {
+		log.Println("❌ S3 upload failed:", err)
+		return ""
+	}
+
+	url := "https://" + bucket + ".s3.amazonaws.com/" + key
+	log.Println("⬆ Uploaded:", url)
+	return url
 }
