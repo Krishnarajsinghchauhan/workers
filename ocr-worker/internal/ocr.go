@@ -46,28 +46,41 @@ func findMagick() string {
 // IMAGE ENHANCER
 // -----------------------------------
 func enhanceScan(input string) string {
-	out := TempName("enhanced", ".png")
+	outPattern := TempFile("enhanced", ".png")      // example: /tmp/enhanced_115801.png
+	outBase := strings.TrimSuffix(outPattern, ".png") // → /tmp/enhanced_115801
 
 	log.Println("🔧 Enhancing scan:", input)
 
+	// For PDFs, convert generates: outBase-0.png, outBase-1.png ...
 	cmd := exec.Command(
 		MAGICK,
 		input,
 		"-normalize",
 		"-brightness-contrast", "10x20",
-		out,
+		outBase+"-%d.png",
 	)
 
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
+	raw, err := cmd.CombinedOutput()
+	if err != nil {
 		log.Println("❌ enhanceScan failed:", err)
+		log.Println(string(raw))
 		return ""
 	}
 
-	log.Println("✔ Enhanced scan →", out)
-	return out
+	// Detect generated file(s)
+	matches, _ := filepath.Glob(outBase + "-*.png")
+	if len(matches) == 0 {
+		log.Println("❌ enhanceScan: no PNGs generated")
+		return ""
+	}
+
+	// We take first page
+	final := matches[0]
+	log.Println("✔ Enhanced scan →", final)
+
+	return final
 }
+
 
 // -----------------------------------
 // PDF → TEXT
