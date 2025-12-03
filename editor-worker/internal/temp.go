@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	"math/rand"
 )
 
 func TempName(prefix, ext string) string {
@@ -12,4 +13,13 @@ func TempName(prefix, ext string) string {
 
 func DeleteFile(path string) {
 	os.Remove(path)
+}
+
+func RandString() string {
+	letters := []rune("abcdefghijklmnopqrstuvwxyz0123456789")
+	b := make([]rune, 10)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(b)
 }
