@@ -40,7 +40,7 @@ func findMagick() string {
 	return magickPath
 }
 
-var MAGICK = findMagick()
+
 
 // -----------------------------------
 // IMAGE ENHANCER
