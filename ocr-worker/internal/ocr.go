@@ -206,7 +206,7 @@ func ProcessJob(job Job) {
 		out, err = runImageOCR(local)
 
 	case "scanned-enhance":
-		// 🔥 FIXED — enhance PDF, NOT enhanceScan
+
 		out, err = enhancePDF(local)
 
 
