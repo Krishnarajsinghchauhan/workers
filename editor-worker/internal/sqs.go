@@ -16,7 +16,7 @@ type Job struct {
 	ID      string            `json:"id"`
 	Tool    string            `json:"tool"`
 	Files   []string          `json:"files"`
-	Options map[string]string `json:"options"` // watermark text, position, etc.
+	Options map[string]string `json:"options"`
 }
 
 func InitSQS() {
@@ -25,26 +25,25 @@ func InitSQS() {
 }
 
 func ListenToQueue() {
-	queueURL := os.Getenv("EDITOR_QUEUE_URL")
+	q := os.Getenv("EDITOR_QUEUE_URL")
 
 	for {
 		msgs, _ := sqsClient.ReceiveMessage(context.TODO(), &sqs.ReceiveMessageInput{
-			QueueUrl:            &queueURL,
+			QueueUrl:            &q,
 			MaxNumberOfMessages: 1,
 			WaitTimeSeconds:     20,
 		})
 
-		for _, msg := range msgs.Messages {
-			var job Job
-			json.Unmarshal([]byte(*msg.Body), &job)
+		for _, m := range msgs.Messages {
 
-			log.Println("Editor job received:", job.Tool)
+			var job Job
+			json.Unmarshal([]byte(*m.Body), &job)
 
 			ProcessJob(job)
 
 			sqsClient.DeleteMessage(context.TODO(), &sqs.DeleteMessageInput{
-				QueueUrl:      &queueURL,
-				ReceiptHandle: msg.ReceiptHandle,
+				QueueUrl:      &q,
+				ReceiptHandle: m.ReceiptHandle,
 			})
 		}
 	}

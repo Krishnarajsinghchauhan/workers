@@ -11,12 +11,11 @@ import (
 func main() {
 	log.Println("Editor Worker Started")
 
-	// Load .env like other workers
+	// Load .env from multiple paths
 	paths := []string{
 		".env",
 		"../.env",
 		"../../.env",
-		"/Users/krishna/Personal Project/pdf/workers/image-worker/.env",
 	}
 
 	loaded := false
@@ -29,16 +28,15 @@ func main() {
 	}
 
 	if !loaded {
-		log.Println("⚠ WARNING: .env not found. Using system env.")
+		log.Println("⚠ Using system environment variables (no .env found)")
 	}
 
 	log.Println("EDITOR_QUEUE_URL =", os.Getenv("EDITOR_QUEUE_URL"))
 	log.Println("AWS_S3_BUCKET =", os.Getenv("AWS_S3_BUCKET"))
-	log.Println("REDIS_HOST =", os.Getenv("REDIS_HOST"))
 
-	internal.InitSQS()
-	internal.InitS3()
 	internal.InitRedis()
+	internal.InitS3()
+	internal.InitSQS()
 
 	internal.ListenToQueue()
 }

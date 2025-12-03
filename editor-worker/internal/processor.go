@@ -1,11 +1,9 @@
 package internal
 
-import (
-	"log"
-)
+import "log"
 
 func ProcessJob(job Job) {
-	log.Println("⚙ Editor Worker processing:", job.Tool)
+	log.Println("⚙ Processing job:", job.Tool)
 
 	UpdateStatus(job.ID, "processing")
 
@@ -32,7 +30,7 @@ func ProcessJob(job Job) {
 		output = editPDF(local, job.Options)
 
 	default:
-		log.Println("❌ Invalid editor tool:", job.Tool)
+		log.Println("❌ Unknown editor tool:", job.Tool)
 		UpdateStatus(job.ID, "error")
 		return
 	}
@@ -45,5 +43,5 @@ func ProcessJob(job Job) {
 	SaveResult(job.ID, url)
 	UpdateStatus(job.ID, "completed")
 
-	log.Println("✅ Editor job done:", job.ID)
+	log.Println("✅ Completed:", job.ID)
 }

@@ -15,117 +15,66 @@ import (
 var s3Client *s3.Client
 var bucket string
 
-// ----------------------------
-// Initialize S3
-// ----------------------------
+// Init
 func InitS3() {
 	bucket = os.Getenv("AWS_S3_BUCKET")
-	if bucket == "" {
-		log.Println("❌ AWS_S3_BUCKET is EMPTY!")
-	} else {
-		log.Println("📦 Using S3 Bucket:", bucket)
-	}
 
-	cfg, err := config.LoadDefaultConfig(
-		context.TODO(),
-		config.WithRegion("us-east-1"), // Bucket region (IMPORTANT)
-	)
-	if err != nil {
-		log.Println("❌ S3 config error:", err)
-		return
-	}
-
+	cfg, _ := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-east-1"))
 	s3Client = s3.NewFromConfig(cfg)
-	log.Println("✅ S3 initialized (Region: us-east-1)")
 }
 
-// ----------------------------
-// Extract S3 Key
-// Supports:
-//   s3://bucket/key
-//   https://bucket.s3.amazonaws.com/key
-// ----------------------------
-func ExtractS3Key(fileURL string) string {
+// Extract S3 key
+func ExtractS3Key(url string) string {
 
-	// Format 1 → s3://bucket/key
-	if strings.HasPrefix(fileURL, "s3://") {
-		trim := strings.TrimPrefix(fileURL, "s3://")
-		parts := strings.SplitN(trim, "/", 2)
-
-		if len(parts) < 2 {
-			log.Println("❌ Missing key in S3 URL:", fileURL)
-			return ""
-		}
-
-		return parts[1]
+	prefix := "https://" + bucket + ".s3.amazonaws.com/"
+	if strings.HasPrefix(url, prefix) {
+		return url[len(prefix):]
 	}
 
-	// Format 2 → https://bucket.s3.amazonaws.com/key
-	httpsPrefix := "https://" + bucket + ".s3.amazonaws.com/"
-	if strings.HasPrefix(fileURL, httpsPrefix) {
-		return fileURL[len(httpsPrefix):]
-	}
-
-	log.Println("❌ Invalid S3 URL:", fileURL)
 	return ""
 }
 
-// ----------------------------
-// Download file FROM S3
-// ----------------------------
-func DownloadFromS3(fileURL string) string {
-	key := ExtractS3Key(fileURL)
+// Download
+func DownloadFromS3(url string) string {
+	key := ExtractS3Key(url)
 
-	if key == "" {
-		log.Println("❌ Cannot extract S3 key from URL:", fileURL)
-		return ""
-	}
+	local := filepath.Join("/tmp", filepath.Base(key))
 
-	localPath := filepath.Join("/tmp", filepath.Base(key))
-
-	out, err := s3Client.GetObject(context.TODO(), &s3.GetObjectInput{
+	resp, err := s3Client.GetObject(context.TODO(), &s3.GetObjectInput{
 		Bucket: &bucket,
 		Key:    &key,
 	})
 
 	if err != nil {
-		log.Println("❌ S3 download failed:", err)
+		log.Println("❌ Download failed:", err)
 		return ""
 	}
 
-	file, _ := os.Create(localPath)
-	io.Copy(file, out.Body)
-	file.Close()
+	f, _ := os.Create(local)
+	io.Copy(f, resp.Body)
+	f.Close()
 
-	log.Println("⬇ Downloaded:", key, "→", localPath)
-	return localPath
+	return local
 }
 
-// ----------------------------
-// Upload file TO S3
-// ALWAYS publicly readable
-// ----------------------------
-func UploadToS3(localPath string) string {
-	filename := filepath.Base(localPath)
-	key := "processed/" + filename
+// Upload
+func UploadToS3(local string) string {
 
-	file, _ := os.Open(localPath)
-	defer file.Close()
+	f, _ := os.Open(local)
+	defer f.Close()
+
+	key := "processed/" + filepath.Base(local)
 
 	_, err := s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
 		Bucket: &bucket,
 		Key:    &key,
-		Body:   file,
-		
+		Body:   f,
 	})
 
 	if err != nil {
-		log.Println("❌ S3 upload failed:", err)
+		log.Println("❌ Upload failed:", err)
 		return ""
 	}
 
-	url := "https://" + bucket + ".s3.amazonaws.com/" + key
-	log.Println("⬆ Uploaded:", url)
-
-	return url
+	return "https://" + bucket + ".s3.amazonaws.com/" + key
 }
