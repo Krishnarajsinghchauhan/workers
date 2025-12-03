@@ -11,6 +11,7 @@ import (
     "strings"
 )
 
+//
 // --------------
 // OCR PROCESSING
 // --------------
@@ -20,15 +21,16 @@ func runOCR(pdfPath string) (string, error) {
 
     base := "/tmp/ocr_page"
 
-    // Convert PDF to PNG pages
+    // Convert PDF to PNG using pdftoppm
     cmd := exec.Command("pdftoppm", pdfPath, base, "-png", "-r", "300")
     out, err := cmd.CombinedOutput()
     if err != nil {
         log.Println("❌ pdftoppm failed:", err)
         log.Println("Output:", string(out))
-        return "", err
+        return "", errors.New("pdftoppm failed")
     }
 
+    // Find generated PNG pages
     pages, _ := filepath.Glob(base + "-*.png")
     if len(pages) == 0 {
         return "", errors.New("no PNG pages produced")
@@ -39,6 +41,7 @@ func runOCR(pdfPath string) (string, error) {
 
     var merged bytes.Buffer
 
+    // OCR each page
     for _, pg := range pages {
         log.Println("🔍 OCR on:", pg)
 
@@ -54,17 +57,18 @@ func runOCR(pdfPath string) (string, error) {
         tOut, tErr := cmd.CombinedOutput()
         if tErr != nil {
             log.Println("❌ Tesseract failed:", string(tOut))
-            return "", tErr
+            return "", errors.New("tesseract failed")
         }
 
-        txt, err := os.ReadFile(outBase + ".txt")
+        txtFile := outBase + ".txt"
+        txt, err := os.ReadFile(txtFile)
         if err == nil {
             merged.Write(txt)
             merged.WriteString("\n\n")
         }
     }
 
-    // Final output file
+    // Write final result file
     final := TempFile("ocr_output", ".txt")
     os.WriteFile(final, merged.Bytes(), 0644)
 
@@ -72,6 +76,7 @@ func runOCR(pdfPath string) (string, error) {
     return final, nil
 }
 
+//
 // --------------
 // MAIN PROCESSOR
 // --------------
@@ -88,13 +93,13 @@ func ProcessJob(job Job) {
 
     output, err := runOCR(local)
     if err != nil {
-        UpdateStatus(job.ID, "error")
         log.Println("❌ runOCR failed:", err)
+        UpdateStatus(job.ID, "error")
         return
     }
 
-    finalURL := UploadToS3(output)
-    SaveResult(job.ID, finalURL)
+    url := UploadToS3(output)
+    SaveResult(job.ID, url)
     UpdateStatus(job.ID, "completed")
 
     DeleteFile(local)
