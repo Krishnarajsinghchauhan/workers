@@ -1,7 +1,7 @@
 package internal
 
 import (
-	"fmt"
+
 	"log"
 	"os/exec"
 )
