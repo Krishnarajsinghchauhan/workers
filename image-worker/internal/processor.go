@@ -12,55 +12,60 @@ import (
 )
 
 func runOCR(pdfPath string) (string, error) {
+	log.Println("📄 Step 1: Converting PDF → PNG pages...")
 
-    log.Println("📄 Converting PDF to images...")
+	base := "/tmp/ocr_page"
 
-    outPrefix := "/tmp/ocr_page"
+	// Convert PDF to PNG images (one per page)
+	cmd := exec.Command("pdftoppm", pdfPath, base, "-png")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+			log.Println("❌ pdftoppm failed:", err)
+			log.Println("Output:", string(out))
+			return "", err
+	}
 
-    // Convert PDF → PNG (multi-page)
-    cmd := exec.Command("pdftoppm", pdfPath, outPrefix, "-png")
-    if out, err := cmd.CombinedOutput(); err != nil {
-        log.Println("❌ pdftoppm failed:", err)
-        log.Println("Output:", string(out))
-        return "", err
-    }
+	// Collect generated PNGs
+	pages, _ := filepath.Glob(base + "-*.png")
+	if len(pages) == 0 {
+			log.Println("❌ No pages produced by pdftoppm")
+			return "", errors.New("no PNG pages created")
+	}
 
-    // Find all PNG pages
-    pages, _ := filepath.Glob(outPrefix + "-*.png")
-    if len(pages) == 0 {
-        return "", errors.New("no PNG pages created from PDF")
-    }
+	sort.Strings(pages)
 
-    sort.Strings(pages)
+	log.Println("📄 Pages generated:", pages)
 
-    // OCR all pages
-    var buf bytes.Buffer
+	var buf bytes.Buffer
 
-    for _, img := range pages {
-        log.Println("🔍 OCR:", img)
+	// Run OCR on each PNG page
+	for _, pg := range pages {
+			log.Println("🔍 Running Tesseract on:", pg)
 
-        base := strings.TrimSuffix(img, ".png")
+			outTxtBase := strings.TrimSuffix(pg, ".png")
+			cmd := exec.Command("tesseract", pg, outTxtBase, "--dpi", "300")
 
-        cmd := exec.Command("tesseract", img, base, "--dpi", "300")
-        if out, err := cmd.CombinedOutput(); err != nil {
-            log.Println("❌ tesseract failed:", string(out))
-            return "", err
-        }
+			tOut, tErr := cmd.CombinedOutput()
+			if tErr != nil {
+					log.Println("❌ Tesseract failed:", string(tOut))
+					return "", tErr
+			}
 
-        txtPath := base + ".txt"
-        data, _ := os.ReadFile(txtPath)
+			txtData, err := os.ReadFile(outTxtBase + ".txt")
+			if err == nil {
+					buf.Write(txtData)
+					buf.WriteString("\n\n")
+			}
+	}
 
-        buf.Write(data)
-        buf.WriteString("\n\n")
-    }
+	// Save final merged OCR file
+	final := TempFile("ocr_output", ".txt")
+	os.WriteFile(final, buf.Bytes(), 0644)
 
-    // Save final merged text file
-    final := TempFile("ocr", ".txt")
-    os.WriteFile(final, buf.Bytes(), 0644)
-
-    log.Println("✅ OCR output ready:", final)
-    return final, nil
+	log.Println("✅ OCR Completed:", final)
+	return final, nil
 }
+
 
 func ProcessJob(job Job) {
 
