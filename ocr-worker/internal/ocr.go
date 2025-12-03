@@ -206,13 +206,9 @@ func ProcessJob(job Job) {
 		out, err = runImageOCR(local)
 
 	case "scanned-enhance":
-		enhanced := enhanceScan(local)
-		if enhanced == "" {
-			UpdateStatus(job.ID, "error")
-			return
-		}
-		out, err = runImageOCR(enhanced)
-		DeleteFile(enhanced)
+		// 🔥 FIXED — enhance PDF, NOT enhanceScan
+		out, err = enhancePDF(local)
+
 
 	default:
 		log.Println("❌ Unknown OCR tool:", job.Tool)
