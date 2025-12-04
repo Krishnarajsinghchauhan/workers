@@ -30,8 +30,6 @@ func addHeaderFooter(input string, opts map[string]string) string {
 		color = "#000000"
 	}
 
-	align := opts["align"] // left, center, right
-
 	marginTop := opts["marginTop"]
 	if marginTop == "" {
 		marginTop = "80"
@@ -77,18 +75,7 @@ func addHeaderFooter(input string, opts map[string]string) string {
 	height := strings.TrimSpace(parts[1])
 
 	// -------------------------------------------------
-	// 3) Alignment → gravity for text horizontal align
-	// -------------------------------------------------
-	textGravity := "center"
-	if align == "left" {
-		textGravity = "west"
-	}
-	if align == "right" {
-		textGravity = "east"
-	}
-
-	// -------------------------------------------------
-	// 4) Build combined header+footer layer
+	// 3) Build combined header+footer layer
 	// -------------------------------------------------
 	layer := filepath.Join(tempDir, "layer.png")
 
@@ -114,7 +101,7 @@ convert -size %sx%s xc:none \
 	}
 
 	// -------------------------------------------------
-	// 5) Composite FULL layer on each page (NO CENTER BUG)
+	// 4) Composite layer on each page
 	// -------------------------------------------------
 	cmd2 := exec.Command(
 		"bash",
@@ -133,7 +120,7 @@ done
 	}
 
 	// -------------------------------------------------
-	// 6) Rebuild PDF from processed pages
+	// 5) Rebuild PDF
 	// -------------------------------------------------
 	output := TempName("headerfooter", ".pdf")
 
@@ -152,7 +139,6 @@ done
 	return output
 }
 
-// Escape text so it does not break ImageMagick command
 func escapeText(s string) string {
 	s = strings.ReplaceAll(s, `"`, `\"`)
 	s = strings.ReplaceAll(s, "\n", "\\n")
