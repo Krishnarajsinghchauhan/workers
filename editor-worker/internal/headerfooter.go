@@ -11,12 +11,11 @@ import (
 
 func addHeaderFooter(input string, opts map[string]string) string {
 
+	log.Println("🔵 Received Header/Footer Options:", opts)
+
 	tempDir := "/tmp/hf_" + RandString()
 	os.MkdirAll(tempDir, 0755)
 
-	// -------------------------------------------------
-	// Extract options
-	// -------------------------------------------------
 	header := escapeText(opts["header"])
 	footer := escapeText(opts["footer"])
 
@@ -40,102 +39,101 @@ func addHeaderFooter(input string, opts map[string]string) string {
 		marginBottom = "80"
 	}
 
-	// -------------------------------------------------
-	// 1) Convert PDF → PNG
-	// -------------------------------------------------
+	log.Println("✨ Parsed Options:",
+		"header=", header,
+		"footer=", footer,
+		"fontSize=", fontSize,
+		"color=", color,
+		"marginTop=", marginTop,
+		"marginBottom=", marginBottom,
+	)
+
+	// -------------------------
+	// 1) PDF → PNG
+	// -------------------------
 	pagePattern := filepath.Join(tempDir, "page_%03d.png")
-	cmd1 := exec.Command(
-		"bash",
-		"-c",
-		fmt.Sprintf(`convert -density 200 "%s" "%s"`, input, pagePattern),
-	)
+	cmd1 := fmt.Sprintf(`convert -density 200 "%s" "%s"`, input, pagePattern)
 
-	if err := cmd1.Run(); err != nil {
-		log.Println("❌ PDF → PNG failed:", err)
+	log.Println("🟡 Running:", cmd1)
+
+	if err := exec.Command("bash", "-c", cmd1).Run(); err != nil {
+		log.Println("❌ PDF→PNG failed:", err)
 		return ""
 	}
 
-	// -------------------------------------------------
-	// 2) Identify first page size
-	// -------------------------------------------------
-	identifyCmd := exec.Command(
-		"bash",
-		"-c",
-		fmt.Sprintf(`identify -format "%%w %%h" "%s/page_001.png"`, tempDir),
-	)
+	// -------------------------
+	// 2) Identify size
+	// -------------------------
+	identifyCmd := fmt.Sprintf(`identify -format "%%w %%h" "%s/page_001.png"`, tempDir)
 
-	raw, err := identifyCmd.Output()
+	sizeOut, err := exec.Command("bash", "-c", identifyCmd).Output()
 	if err != nil {
-		log.Println("❌ Read size failed:", err)
+		log.Println("❌ Identify failed:", err)
 		return ""
 	}
 
-	parts := strings.Split(string(raw), " ")
+	parts := strings.Split(string(sizeOut), " ")
 	width := strings.TrimSpace(parts[0])
 	height := strings.TrimSpace(parts[1])
 
-	// -------------------------------------------------
-	// 3) Build combined header+footer layer
-	// -------------------------------------------------
+	log.Println("📏 Page Size:", width, "x", height)
+
+	// -------------------------
+	// 3) Create Layer
+	// -------------------------
 	layer := filepath.Join(tempDir, "layer.png")
 
-	layerCmd := exec.Command(
-		"bash",
-		"-c",
-		fmt.Sprintf(`
+	layerCmd := fmt.Sprintf(`
 convert -size %sx%s xc:none \
   -gravity north -pointsize %s -fill "%s" -annotate +0+%s "%s" \
   -gravity south -pointsize %s -fill "%s" -annotate +0+%s "%s" \
   "%s"
 `,
-			width, height,
-			fontSize, color, marginTop, header,
-			fontSize, color, marginBottom, footer,
-			layer,
-		),
+		width, height,
+		fontSize, color, marginTop, header,
+		fontSize, color, marginBottom, footer,
+		layer,
 	)
 
-	if err := layerCmd.Run(); err != nil {
-		log.Println("❌ Create layer failed:", err)
+	log.Println("🟡 Creating Layer:", layerCmd)
+
+	if err := exec.Command("bash", "-c", layerCmd).Run(); err != nil {
+		log.Println("❌ Layer creation failed:", err)
 		return ""
 	}
 
-	// -------------------------------------------------
-	// 4) Composite layer on each page
-	// -------------------------------------------------
-	cmd2 := exec.Command(
-		"bash",
-		"-c",
-		fmt.Sprintf(`
+	// -------------------------
+	// 4) Apply Layer
+	// -------------------------
+	compositeCmd := fmt.Sprintf(`
 for f in %s/page_*.png; do
   base=$(basename "$f")
   convert "$f" "%s" -compose over -composite "%s/out_$base"
 done
-`, tempDir, layer, tempDir),
-	)
+`, tempDir, layer, tempDir)
 
-	if err := cmd2.Run(); err != nil {
+	log.Println("🟡 Compositing:", compositeCmd)
+
+	if err := exec.Command("bash", "-c", compositeCmd).Run(); err != nil {
 		log.Println("❌ Composite failed:", err)
 		return ""
 	}
 
-	// -------------------------------------------------
+	// -------------------------
 	// 5) Rebuild PDF
-	// -------------------------------------------------
+	// -------------------------
 	output := TempName("headerfooter", ".pdf")
 
-	cmd3 := exec.Command(
-		"bash",
-		"-c",
-		fmt.Sprintf(`convert "%s/out_page_*.png" -quality 95 "%s"`, tempDir, output),
-	)
+	rebuildCmd := fmt.Sprintf(`convert "%s/out_page_*.png" -quality 95 "%s"`, tempDir, output)
 
-	if err := cmd3.Run(); err != nil {
+	log.Println("🟡 Rebuilding PDF:", rebuildCmd)
+
+	if err := exec.Command("bash", "-c", rebuildCmd).Run(); err != nil {
 		log.Println("❌ Rebuild failed:", err)
 		return ""
 	}
 
-	log.Println("✅ Header/Footer applied successfully:", output)
+	log.Println("✅ FINAL PDF GENERATED:", output)
 	return output
 }
 
