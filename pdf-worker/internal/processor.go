@@ -120,6 +120,34 @@ func rotatePDF(input string, opts map[string]string) string {
 // ----------------------------
 // REORDER PDF (change page order)
 // ----------------------------
+
+func protectPDF(input string, opts map[string]string) string {
+	password := opts["password"]
+	if password == "" {
+			log.Println("❌ No password provided for protectPDF")
+			return ""
+	}
+
+	out := TempName("protected", ".pdf")
+
+	cmd := exec.Command("qpdf",
+			"--encrypt", password, password, "256",
+			"--", input, out,
+	)
+
+	outBytes, err := cmd.CombinedOutput()
+	if err != nil {
+			log.Println("❌ qpdf protect failed:", err)
+			log.Println("Output:", string(outBytes))
+			return ""
+	}
+
+	log.Println("✅ PDF protected:", out)
+	return out
+}
+
+
+
 func reorderPDF(input string, opts map[string]string) string {
 	order := opts["order"]
 	if order == "" {
@@ -238,6 +266,12 @@ func ProcessJob(job Job) {
 
 	case "reorder":
     out := reorderPDF(local[0], job.Options)
+    if out != "" {
+        outputs = []string{out}
+    }
+
+	case "protect":
+    out := protectPDF(local[0], job.Options)
     if out != "" {
         outputs = []string{out}
     }
