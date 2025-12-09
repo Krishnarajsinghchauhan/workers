@@ -33,27 +33,26 @@ func addSignatureToPDF(pdfFile, sigFile string, x, y int) string {
 
 	conf := model.NewDefaultConfiguration()
 
-	// Stamp the signature image at given coordinates
-	details := fmt.Sprintf(
-    "pos:abs, scale:1, x:%d, y:%d",
-    x, y,
-)
+	// Build watermark description
+	desc := fmt.Sprintf("pos:abs, x:%d, y:%d, scale:1", x, y)
 
-wm, err := pdfcpu.ParseWatermarkDetails(sigFile, "image", details, true, true)
-
+	// Correct pdfcpu API for your version
+	wm, err := pdfcpu.ParseImageWatermarkDetails(sigFile, desc, true)
 	if err != nil {
-		log.Println("Watermark details error:", err)
-		return pdfFile
+			log.Println("Watermark details error:", err)
+			return pdfFile
 	}
 
 	err = pdfcpu.AddWatermarksFile(pdfFile, output, nil, wm, conf)
 	if err != nil {
-		log.Println("Apply signature error:", err)
-		return pdfFile
+			log.Println("Apply signature error:", err)
+			return pdfFile
 	}
 
 	return output
 }
+
+
 
 func ProcessJob(job Job) {
 	UpdateStatus(job.ID, "processing")

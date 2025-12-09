@@ -17,11 +17,7 @@ func InitSQS() {
 	sqsClient = sqs.NewFromConfig(cfg)
 }
 
-type Job struct {
-	ID    string   `json:"id"`
-	Tool  string   `json:"tool"`
-	Files []string `json:"files"`
-}
+
 
 func ListenToQueue() {
 	queueURL := os.Getenv("IMAGE_QUEUE_URL")
