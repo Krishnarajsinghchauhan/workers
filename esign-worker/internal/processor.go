@@ -7,9 +7,7 @@ import (
 	"os/exec"
 	"strconv"
 
-	api "github.com/pdfcpu/pdfcpu/pkg/api"
-
-
+	pdfcpu "github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 )
 
@@ -35,26 +33,24 @@ func addSignatureToPDF(pdfFile, sigFile string, x, y int) string {
 
 	conf := model.NewDefaultConfiguration()
 
-	// Watermark command string
-	wmStr := fmt.Sprintf("image:%s pos:abs x:%d y:%d scale:1", sigFile, x, y)
-
-	wm, err := api.ParseWatermarkDetails(wmStr, true, true)
+	// Stamp the signature image at given coordinates
+	wm, err := pdfcpu.ParseImageWatermarkDetails(sigFile,
+		fmt.Sprintf("pos:abs, x:%d, y:%d, scale:1", x, y),
+		true,
+	)
 	if err != nil {
-			log.Println("Watermark parse error:", err)
-			return pdfFile
+		log.Println("Watermark details error:", err)
+		return pdfFile
 	}
 
-	err = api.AddWatermarksFile(pdfFile, output, nil, wm, conf)
+	err = pdfcpu.AddWatermarksFile(pdfFile, output, nil, wm, conf)
 	if err != nil {
-			log.Println("Apply signature error:", err)
-			return pdfFile
+		log.Println("Apply signature error:", err)
+		return pdfFile
 	}
 
 	return output
 }
-
-
-
 
 func ProcessJob(job Job) {
 	UpdateStatus(job.ID, "processing")
