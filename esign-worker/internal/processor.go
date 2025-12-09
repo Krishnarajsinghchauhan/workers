@@ -34,10 +34,13 @@ func addSignatureToPDF(pdfFile, sigFile string, x, y int) string {
 	conf := model.NewDefaultConfiguration()
 
 	// Stamp the signature image at given coordinates
-	wm, err := pdfcpu.ParseImageWatermarkDetails(sigFile,
-		fmt.Sprintf("pos:abs, x:%d, y:%d, scale:1", x, y),
-		true,
-	)
+	details := fmt.Sprintf(
+    "pos:abs, scale:1, x:%d, y:%d",
+    x, y,
+)
+
+wm, err := pdfcpu.ParseWatermarkDetails(sigFile, "image", details, true, true)
+
 	if err != nil {
 		log.Println("Watermark details error:", err)
 		return pdfFile

@@ -12,11 +12,7 @@ import (
 
 var sqsClient *sqs.Client
 
-type Job struct {
-	ID    string   `json:"id"`
-	Tool  string   `json:"tool"`
-	Files []string `json:"files"`
-}
+
 
 func InitSQS() {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
