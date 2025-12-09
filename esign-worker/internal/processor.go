@@ -33,13 +33,12 @@ func addSignatureToPDF(pdfFile, sigFile string, x, y int) string {
 
 	conf := model.NewDefaultConfiguration()
 
-	// Build watermark description
-	desc := fmt.Sprintf("pos:abs, x:%d, y:%d, scale:1", x, y)
+	// Watermark command string
+	wmStr := fmt.Sprintf("image:%s pos:abs x:%d y:%d scale:1", sigFile, x, y)
 
-	// Correct pdfcpu API for your version
-	wm, err := pdfcpu.ParseImageWatermarkDetails(sigFile, desc, true)
+	wm, err := pdfcpu.ParseWatermarkDetails(wmStr, true, true)
 	if err != nil {
-			log.Println("Watermark details error:", err)
+			log.Println("Watermark parse error:", err)
 			return pdfFile
 	}
 
@@ -51,6 +50,7 @@ func addSignatureToPDF(pdfFile, sigFile string, x, y int) string {
 
 	return output
 }
+
 
 
 
