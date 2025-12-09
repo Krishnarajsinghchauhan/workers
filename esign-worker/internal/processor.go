@@ -8,8 +8,7 @@ import (
 	"strconv"
 
 	pdfcpu "github.com/pdfcpu/pdfcpu/pkg/api"
-  "github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
-  wm "github.com/pdfcpu/pdfcpu/pkg/pdfcpu/wm"
+    "github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 )
 
 func resizeSignature(input string, width int) string {
@@ -34,25 +33,34 @@ func addSignatureToPDF(pdfFile, sigFile string, x, y int) string {
 
 	conf := model.NewDefaultConfiguration()
 
-	// Create watermark object
-	w := wm.ImageWatermark{
-			FileName: sigFile,
-			Pos:      "abs",
-			Dx:       float64(x),
-			Dy:       float64(y),
-			Scale:    1.0,
-			Opacity:  1.0,
+	// Create watermark struct manually
+	wm := &model.Watermark{
+			Mode:             model.WMImage,
+			FileName:         sigFile,
+			Pos:              "abs",
+			Dx:               float64(x),
+			Dy:               float64(y),
+			Scale:            1.0,
+			Opacity:          1.0,
+			Rotation:         0,
+			RenderMode:       model.RMFill,
+			UserRotation:     0,
+			MultiStamp:       false,
+			UpdateStamp:      false,
+			OnTop:            true,
+			Diagonal:         false,
+			Page:             nil,
 	}
 
-	// Convert into Watermark instance used by pdfcpu
-	mark, err := w.ToWatermark(nil)
+	// Initialize WM, required before applying
+	err := wm.Parse()
 	if err != nil {
-			log.Println("Watermark conversion error:", err)
+			log.Println("Watermark parse error:", err)
 			return pdfFile
 	}
 
-	// Apply watermark / signature
-	err = pdfcpu.AddWatermarksFile(pdfFile, output, nil, mark, conf)
+	// Apply to PDF
+	err = pdfcpu.AddWatermarksFile(pdfFile, output, nil, wm, conf)
 	if err != nil {
 			log.Println("Apply signature error:", err)
 			return pdfFile
@@ -60,6 +68,7 @@ func addSignatureToPDF(pdfFile, sigFile string, x, y int) string {
 
 	return output
 }
+
 
 
 func ProcessJob(job Job) {
